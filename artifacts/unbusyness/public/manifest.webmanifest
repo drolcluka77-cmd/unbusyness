@@ -1,0 +1,9 @@
+{
+  "name": "Unbusyness",
+  "short_name": "Unbusyness",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FBFAF7",
+  "theme_color": "#1F4D45",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" }]
+}

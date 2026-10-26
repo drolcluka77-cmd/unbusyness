@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Unbusyness"
+description = "The supplied Unbusyness Node.js and PostgreSQL MVP, preserved without a frontend build step or library changes."
+version = "1.0.0"
+id = "artifacts/unbusyness"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 3000
+
+[services.development]
+run = "pnpm --filter @workspace/unbusyness run dev"
+
+[services.production]
+
+[services.production.run]
+args = ["node", "artifacts/unbusyness/server.js"]
+
+[services.production.run.env]
+NODE_ENV = "production"
+DEV_LOGIN = "0"
+
+[services.env]
+PORT = "3000"
+BASE_PATH = "/"

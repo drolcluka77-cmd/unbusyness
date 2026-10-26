@@ -1,0 +1,20 @@
+{
+  "name": "@workspace/unbusyness",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Unbusyness Business MVP: AI office manager for trade businesses",
+  "main": "server.js",
+  "scripts": {
+    "dev": "node server.js",
+    "start": "node server.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "imapflow": "^1.0.164",
+    "mailparser": "^3.7.1",
+    "nodemailer": "^10.2.1",
+    "pg": "^8.13.1"
+  }
+}

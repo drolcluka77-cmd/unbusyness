@@ -1,45 +1,50 @@
-# [Project name]
+# Unbusyness
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+Imported trade-business MVP: calls → quotes → jobs → invoices → payments.
 
 ## Run & Operate
 
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
-- `pnpm run typecheck` — full typecheck across all packages
-- `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
+- Managed workflow: `artifacts/unbusyness: web`, port 3000.
+- App directory: `artifacts/unbusyness`; start with `node server.js`. No build step.
+- Required: managed `DATABASE_URL`; `ENCRYPTION_KEY` for mailbox/calendar credentials.
+- `DEV_LOGIN=1` is development-only and hard-disabled when `NODE_ENV=production`.
+- Development startup applies `lib/schema.sql`. Publish manages the production schema.
+- Always-on Reserved VM target: reminders run every 15 minutes.
 
 ## Stack
 
-- pnpm workspaces, Node.js 24, TypeScript 5.9
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- Original Node HTTP router, CommonJS, PostgreSQL with `pg`, plain HTML/CSS/JavaScript.
+- Original IMAPFlow, Mailparser and Nodemailer integrations.
+- Replit OIDC + PKCE in `lib/auth.js`; existing database sessions and `upsertUser`.
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- The imported source, schema and original documentation are inside `artifacts/unbusyness`.
+- `scripts/src/verify-unbusyness.mjs`: browser flow, permissions and mobile checks.
+- `scripts/src/verify-unbusyness-auth.cjs`: isolated OIDC callback regression checks.
+- Verification screenshots belong in ignored `generated-artifacts/`.
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- The generated template API must not claim `/api`; Unbusyness owns its own API and frontend.
+- Do not port this app to the template Express/Drizzle/React architecture.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- Owner business management, manager dispatch and worker-only assigned jobs/tasks.
+- Optional email/calendar, voice-provider, AI, SMS and payment connections.
+- Without delivery credentials, outgoing messages are logged, not actually sent.
 
 ## User preferences
 
-_Populate as you build — explicit user instructions worth remembering across sessions._
+- “Do NOT rewrite the architecture or swap libraries. Only fix what is broken, and tell me what you changed.”
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Never print or commit secrets. Losing/replacing the encryption key requires reconnecting integrations.
+- Real-account Replit consent cannot be completed by an unauthenticated screenshot browser.
+- The app is not published until the user clicks Publish; do not invent a production URL.
 
 ## Pointers
 
-- See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- `artifacts/unbusyness/README.md` and `VOICE_INTEGRATION.md` contain the original setup instructions.
