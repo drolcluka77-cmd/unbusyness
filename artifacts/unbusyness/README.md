@@ -31,8 +31,7 @@ Vse je neobvezno. Brez ključa aplikacija deluje, sporočila pa se samo shranijo
 
 | Secret | Za kaj | Kje ga dobiš |
 |---|---|---|
-| `RESEND_API_KEY` | Pošiljanje e-mailov (ponudbe, računi, opomniki) | resend.com → API Keys |
-| `MAIL_FROM` | Pošiljatelj, npr. `office@unbusyness.com` | Domeno najprej potrdiš v Resendu |
+| `SYSTEM_SMTP_HOST`, `SYSTEM_SMTP_PORT`, `SYSTEM_SMTP_USER`, `SYSTEM_SMTP_PASS`, `SYSTEM_MAIL_FROM` | Sistemski e-maili (potrditev računa, ponastavitev gesla) | Nabiralnik `noreply@` pri ponudniku domene |
 | `ANTHROPIC_API_KEY` | AI osnutki ponudb iz klica | console.anthropic.com. Brez ključa aplikacija izbere postavke iz cenika po ključnih besedah. |
 | `AI_MODEL` | Neobvezno, privzeto `claude-sonnet-5-5` | |
 | `STRIPE_SECRET_KEY` | Plačila računov (Stripe Connect) | dashboard.stripe.com → Developers → API keys |
@@ -44,6 +43,19 @@ Vse je neobvezno. Brez ključa aplikacija deluje, sporočila pa se samo shranijo
 | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` | Gmail + Google Calendar | Google Cloud Console |
 | `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` | Outlook / Microsoft 365 + koledar | Microsoft Entra |
 | `PUBLIC_URL` | Neobvezno, npr. `https://app.unbusyness.com`, za povezave v samodejnih opomnikih | |
+
+## Prijava (Unbusyness računi)
+
+Uporabniki si ustvarijo **Unbusyness račun**, Replit računa ne potrebujejo:
+- **E-mail in geslo:** s potrditvijo e-maila in pozabljenim geslom. Gesla so shranjena kot scrypt hash.
+- **Continue with Google / Microsoft:** gumb se pokaže, ko so nastavljeni ključi `GOOGLE_*` ali `MICROSOFT_*`. Za prijavo se zahteva samo ime in e-mail.
+- **Sistemski e-maili** (potrditev, ponastavitev gesla) gredo prek SMTP nabiralnika. Nastaviš jih s `SYSTEM_SMTP_HOST`, `SYSTEM_SMTP_PORT`, `SYSTEM_SMTP_USER`, `SYSTEM_SMTP_PASS` in `SYSTEM_MAIL_FROM` (npr. `Unbusyness <noreply@unbusyness.com>`). Brez njih se v razvoju povezave izpišejo v log.
+- **Zaščita:** omejitev poskusov prijave (5 v 15 minutah), nov ID seje ob vsaki prijavi, zavrnjeni zahtevki z drugih strani (CSRF).
+- **Prijava z Replitom** je skrita in se pokaže samo v razvoju ali s `SHOW_REPLIT_LOGIN=1`.
+
+Pri Googlu in Microsoftu dodaj **oba** redirect naslova, enega za prijavo in enega za integracije (vidiš ju v *Settings → Integrations → Setup details*):
+- `https://<domena>/api/auth/oauth/google/callback` in `https://<domena>/api/integrations/oauth/google/callback`
+- `https://<domena>/api/auth/oauth/microsoft/callback` in `https://<domena>/api/integrations/oauth/microsoft/callback`
 
 ## Vloge in dostop
 
@@ -95,7 +107,7 @@ Za vse ostale poštne strežnike. Vpišeš strežnik, vrata, uporabniško ime in
 
 ### Kaj se zgodi po povezavi
 
-- **E-mail:** ponudbe, računi in opomniki odidejo z lastnikovega pravega naslova. Na strani stranke se prikažejo e-maili s to stranko, na katere lahko odgovoriš ali shraniš osnutek. Brez povezanega nabiralnika se uporabi Resend, brez Resenda pa se sporočilo samo shrani.
+- **E-mail:** ponudbe, računi in opomniki odidejo z lastnikovega pravega naslova. Na strani stranke se prikažejo e-maili s to stranko, na katere lahko odgovoriš ali shraniš osnutek. Brez povezanega nabiralnika se sporočilo samo shrani v Settings → Messages.
 - **Koledar:** v koledar gredo samo **termini**, torej jobi, ogledi stranke, inšpekcije in sestanki s časom. Notranje **naloge** ("pokliči dobavitelja", "pošlji ponudbo") ostanejo samo v Unbusyness. Rezervacija, ki jo zahteva AI, gre v koledar šele, ko jo potrdiš.
 - **Smer sinhronizacije:** samo v eno smer (Unbusyness → koledar). Unbusyness je vir resnice: sprememba v Google ali Outlook koledarju se ob naslednji spremembi v Unbusyness prepiše.
 - **Napake:** če koledar ne deluje, se job vseeno shrani. Napaka se pokaže pri jobu in v integracijah, gumb **Sync now** pa poskusi znova.
@@ -132,7 +144,9 @@ lib/integrations/      e-mail in koledar (ločeno od jedra)
   oauth.js             OAuth za Google in Microsoft, osveževanje žetonov
   vault.js             šifriranje poverilnic (AES-256-GCM)
   index.js             Settings → Integrations in e-mail API
-lib/services.js        e-mail (prek povezanega nabiralnika ali Resend), SMS, AI, Stripe
+lib/services.js        e-mail strankam (prek povezanega nabiralnika), SMS, AI, Stripe
+lib/accounts.js        Unbusyness računi: geslo, potrditev, ponastavitev, Google/Microsoft prijava
+lib/mailer.js          sistemski e-maili prek SMTP (noreply@)
 lib/docs.js            videz ponudb in računov (A4, PDF)
 public/                aplikacija (HTML, CSS, JS, brez build koraka)
 ```

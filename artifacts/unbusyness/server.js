@@ -8,6 +8,7 @@ const auth = require('./lib/auth');
 const api = require('./lib/api');
 const voice = require('./lib/voice');
 const integrations = require('./lib/integrations');
+const accounts = require('./lib/accounts');
 
 const PORT = Number(process.env.PORT || 3000);
 const router = createRouter();
@@ -15,6 +16,7 @@ auth.routes(router);
 api.routes(router);
 voice.routes(router, api);
 integrations.routes(router);
+accounts.routes(router);
 const statics = serveStatic(path.join(__dirname, 'public'));
 
 const server = http.createServer(async (req, res) => {
@@ -23,6 +25,7 @@ const server = http.createServer(async (req, res) => {
   res.setHeader('Referrer-Policy', 'same-origin');
   try {
     if (url.pathname === '/healthz') return json(res, 200, { ok: true });
+    if (!accounts.originAllowed(req, url.pathname)) return json(res, 403, { error: 'Request blocked (wrong origin)' });
     const m = router.match(req.method, url.pathname);
     if (!m) {
       if (req.method === 'GET' && !url.pathname.startsWith('/api/') && statics(req, res)) return;

@@ -160,7 +160,7 @@ function routes(router) {
   router.get('/api/logout', async (req, res) => {
     if (req.session) await db.query('DELETE FROM sessions WHERE id=$1', [req.session.id]);
     setCookie(res, COOKIE, '', { maxAge: 0 });
-    if (CLIENT_ID) {
+    if (CLIENT_ID && req.user && String(req.user.auth_sub || '').startsWith('replit:')) {
       try {
         const d = await discover();
         if (d.end_session_endpoint) {
@@ -211,4 +211,4 @@ function routes(router) {
 const requireUser = (req) => { if (!req.user) fail(401, 'Please log in'); };
 const requireBusiness = (req) => { requireUser(req); if (!req.membership) fail(409, 'Create or join a company first'); };
 
-module.exports = { loadSession, routes, requireUser, requireBusiness, saveSessionData, DEV_LOGIN, rid, originOf };
+module.exports = { loadSession, routes, requireUser, requireBusiness, saveSessionData, startUserSession, upsertUser, ensureSession, isSecure, DEV_LOGIN, rid, originOf };

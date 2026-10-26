@@ -1,4 +1,4 @@
-// Outside services: email (Resend), SMS (Twilio), AI quote drafts (Anthropic), payments (Stripe).
+// Outside services: company mailbox email, SMS (Twilio), AI quote drafts (Anthropic), payments (Stripe).
 // Each one is optional. Without keys, messages are saved to the Outbox so the app still works end to end.
 'use strict';
 const crypto = require('crypto');
@@ -7,7 +7,6 @@ const db = require('./db');
 // ---------- Messages ----------
 async function sendEmail({ businessId, to, subject, html, text, replyTo, fromName }) {
   let status = 'logged'; let error = null; let via = null;
-  const key = process.env.RESEND_API_KEY;
   // 1) The company's own mailbox (Gmail, Microsoft 365 or IMAP/SMTP), so customers see the real sender.
   if (to && businessId) {
     try {
@@ -20,18 +19,7 @@ async function sendEmail({ businessId, to, subject, html, text, replyTo, fromNam
       }
     } catch (e) { console.error('Mailbox lookup failed', e.message); }
   }
-  // 2) Otherwise Resend (app-wide sender), 3) otherwise only saved in the Outbox.
-  if (!via && key && to) {
-    try {
-      const from = process.env.MAIL_FROM || 'onboarding@resend.dev';
-      const r = await fetch('https://api.resend.com/emails', {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from: fromName ? `${fromName} <${from.replace(/.*</, '').replace(/>.*/, '')}>` : from, to: [to], subject, html, text, reply_to: replyTo || undefined }),
-      });
-      if (r.ok) status = 'sent'; else { status = 'failed'; error = (await r.text()).slice(0, 500); }
-    } catch (e) { status = 'failed'; error = e.message; }
-  }
+  // 2) No mailbox connected: the message is only saved in the Outbox (Settings › Messages).
   await db.query('INSERT INTO outbox(business_id, channel, to_addr, subject, body, status, error) VALUES($1,$2,$3,$4,$5,$6,$7)',
     [businessId, via ? `email:${via}` : 'email', to || '(no email on file)', subject, text || html, status, error]);
   return status;

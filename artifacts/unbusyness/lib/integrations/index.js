@@ -41,7 +41,7 @@ function routes(router) {
     return {
       encryption: vault.ready(), email: summary(e), calendar: summary(c), calendarStats: synced,
       available: { google: oauth.configured('google'), microsoft: oauth.configured('microsoft'), imap: imapReady },
-      redirectUris: { google: `${originOf(req)}/api/integrations/oauth/google/callback`, microsoft: `${originOf(req)}/api/integrations/oauth/microsoft/callback` },
+      redirectUris: { google: `${originOf(req)}/api/integrations/oauth/google/callback`, microsoft: `${originOf(req)}/api/integrations/oauth/microsoft/callback`, googleLogin: `${originOf(req)}/api/auth/oauth/google/callback`, microsoftLogin: `${originOf(req)}/api/auth/oauth/microsoft/callback` },
     };
   });
 

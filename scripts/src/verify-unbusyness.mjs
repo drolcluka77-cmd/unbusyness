@@ -25,6 +25,7 @@ await fs.mkdir('generated-artifacts/verification', { recursive: true });
 try {
   assert.deepEqual(await api('/healthz'), { ok: true });
   await page.goto('/');
+  await page.getByText('Demo login (development only)', { exact: true }).click();
   await page.locator('#dn').fill('QA Owner');
   await page.locator('#de').fill(`qa-owner-${Date.now()}@example.com`);
   await page.getByRole('button', { name: 'Continue', exact: true }).click();
@@ -85,6 +86,7 @@ try {
     const ctx = await browser.newContext({ baseURL: base, viewport: { width: 390, height: 844 } });
     const p = await ctx.newPage();
     await p.goto(new URL(invite.url).pathname);
+    await p.getByText('Demo login (development only)', { exact: true }).click();
     await p.locator('#dn').fill(`QA ${role}`);
     await p.locator('#de').fill(`qa-${role}-${Date.now()}@example.com`);
     await p.getByRole('button', { name: 'Continue', exact: true }).click();

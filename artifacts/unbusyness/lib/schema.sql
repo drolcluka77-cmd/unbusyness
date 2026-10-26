@@ -310,3 +310,26 @@ CREATE TABLE IF NOT EXISTS integrations (
   created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (business_id, kind)
 );
+
+-- Own Unbusyness accounts (email + password, Google, Microsoft). No Replit account needed.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash TEXT;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ;
+CREATE INDEX IF NOT EXISTS users_email_lower ON users(lower(email));
+CREATE TABLE IF NOT EXISTS user_identities (
+  id          SERIAL PRIMARY KEY,
+  user_id     INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  provider    TEXT NOT NULL,
+  subject     TEXT NOT NULL,
+  email       TEXT DEFAULT '',
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (provider, subject)
+);
+CREATE TABLE IF NOT EXISTS auth_tokens (
+  id          SERIAL PRIMARY KEY,
+  user_id     INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  type        TEXT NOT NULL,
+  token_hash  TEXT UNIQUE NOT NULL,
+  expires_at  TIMESTAMPTZ NOT NULL,
+  used_at     TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);

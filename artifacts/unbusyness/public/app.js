@@ -50,6 +50,7 @@ const I = {
   nav: '<path d="M3 11l18-8-8 18-2-8z"/>', truck: '<path d="M3 6h11v10H3zM14 10h4l3 3v3h-7"/><circle cx="7" cy="18" r="2"/><circle cx="17" cy="18" r="2"/>',
   play: '<path d="M7 4l13 8-13 8z"/>', cam: '<path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/>', clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7v5l3 2"/>',
   alert: '<path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17v.5"/>', search: '<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4 4"/>', out: '<path d="M15 4h4v16h-4M10 8l-4 4 4 4M6 12h10"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
   more: '<circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/>', back: '<path d="M15 5l-7 7 7 7"/>', eye: '<path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z"/><circle cx="12" cy="12" r="3"/>',
   mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>', trash: '<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>', edit: '<path d="M4 20h4L19 9l-4-4L4 16z"/>',
 };
@@ -100,7 +101,9 @@ function route() {
   $('#layer').innerHTML = ''; S.nav = (S.nav || 0) + 1;
   const parts = h.replace(/^#\/?/, '').split('?')[0].split('/');
   const qs = new URLSearchParams(h.split('?')[1] || '');
+  if (parts[0] === 'reset') return pLogin(qs, 'reset');
   if (!S.me || !S.me.user) return pLogin(qs);
+  if (parts[0] === 'account') return pAccount(qs);
   if (!S.me.business) return pSetup();
   if (!manages()) {
     if (parts[0] === 'job' && parts[1]) return pWorkerJob(parts[1]);
@@ -132,28 +135,91 @@ function shell(page, crumb, content) {
     ${(S.me.memberships || []).length > 1 ? `<select class="input" style="min-height:34px;font-size:12px" aria-label="Switch company" onchange="switchCompany(this.value)">${S.me.memberships.map((m) => `<option value="${m.business_id}" ${m.business_id === b.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select>` : ''}
     <div><div class="navlabel">WORKSPACE</div><nav class="nav">${NAV.filter((n) => n[3] === 1 && navOk(n)).map(link).join('')}</nav></div>
     ${NAV.some((n) => n[3] === 2 && navOk(n)) ? `<div><div class="navlabel">${can('money.manage') ? 'MONEY' : 'COMPANY'}</div><nav class="nav">${NAV.filter((n) => n[3] === 2 && navOk(n)).map(link).join('')}</nav></div>` : ''}
-    <div class="sidefoot"><div class="ws"><span class="av" style="background:var(--apricot-soft);color:var(--apricot-ink)">${esc(initials(u.name))}</span><div style="min-width:0"><b>${esc(u.name || u.email)}</b><small>${esc(roleLabel(u.role))}</small></div></div><a class="btn line sm" href="/api/logout">${svg('out', 14)}Log out</a></div>
+    <div class="sidefoot"><a class="ws" href="#/account" style="text-decoration:none;color:inherit" title="Your account"><span class="av" style="background:var(--apricot-soft);color:var(--apricot-ink)">${esc(initials(u.name))}</span><div style="min-width:0"><b>${esc(u.name || u.email)}</b><small>${esc(roleLabel(u.role))} · Account</small></div></a><a class="btn line sm" href="/api/logout">${svg('out', 14)}Log out</a></div>
   </aside>
   <div class="main"><header class="top"><div class="crumb">${crumb}</div><div class="topr"><button class="btn primary sm" onclick="openJobForm({})">${svg('plus', 14)}<span class="hide-m">New job</span></button></div></header>
-    <main class="content" id="content">${content || '<div class="empty">Loading…</div>'}</main></div></div>
+    <main class="content" id="content">${verifyBanner()}${content || '<div class="empty">Loading…</div>'}</main></div></div>
   <nav class="tabbar" aria-label="Main">${tab('today', 'Today', 'tree')}${tab('calls', 'Calls', 'phone', cnt.calls)}${tab('jobs', 'Jobs', 'cal')}${can('money.manage') ? tab('invoices', 'Money', 'euro') : tab('tasks', 'Tasks', 'check')}${tab('more', 'More', 'more', can('money.manage') ? cnt.quotes : 0)}</nav>`;
 }
-const setContent = (h) => { const c = $('#content'); if (c) c.innerHTML = h; };
+const setContent = (h) => { const c = $('#content'); if (c) c.innerHTML = verifyBanner() + h; };
 const head = (eb, title, sub, right = '') => `<div class="head"><div><div class="eyebrow">${eb}</div><h1>${title}</h1>${sub ? `<p>${sub}</p>` : ''}</div>${right}</div>`;
 const stat = (l, n, s, ic, tone = 'green', href) => `<${href ? `a href="${href}"` : 'div'} class="card stat"><div class="lbl">${l}<span class="ic ${tone}">${svg(ic)}</span></div><b>${n}</b><small>${s}</small></${href ? 'a' : 'div'}>`;
 
 /* ---------- login + setup ---------- */
-function pLogin(qs) {
-  const m = S.me || {}; const err = qs.get('error');
+/* ---------- Unbusyness accounts: log in, sign up, forgot / reset password ---------- */
+const NOTICES = { verified: 'Your email is confirmed. Thank you!', 'verify-expired': 'That confirmation link has expired. Log in and ask for a new one.', linked: 'Login method connected.' };
+async function pLogin(qs, mode) {
+  const m = S.me || {}; mode = mode || qs.get('mode') || 'login';
+  if (!S.authCfg) { try { S.authCfg = await api('GET', '/api/auth/config'); } catch { S.authCfg = {}; } }
+  const cfg = S.authCfg; const invite = m.invite || qs.get('invite');
+  const err = qs.get('error'); const notice = NOTICES[qs.get('notice')];
+  const social = (cfg.google || cfg.microsoft) ? `<div class="or">or</div><div class="stack">
+      ${cfg.google ? `<a class="btn line lg" href="/api/auth/oauth/google/start"><svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>Continue with Google</a>` : ''}
+      ${cfg.microsoft ? `<a class="btn line lg" href="/api/auth/oauth/microsoft/start"><svg width="16" height="16" viewBox="0 0 23 23" aria-hidden="true"><path fill="#f35325" d="M1 1h10v10H1z"/><path fill="#81bc06" d="M12 1h10v10H12z"/><path fill="#05a6f0" d="M1 12h10v10H1z"/><path fill="#ffba08" d="M12 12h10v10H12z"/></svg>Continue with Microsoft</a>` : ''}</div>` : '';
+  const forms = {
+    login: `<form class="form" onsubmit="doLogin(event)"><div class="field"><label for="le">Email</label><input class="input" id="le" type="email" required autocomplete="email" placeholder="you@company.com"></div>
+      <div class="field"><div class="row between"><label for="lp">Password</label><a href="#/login?mode=forgot" class="small">Forgot password?</a></div><input class="input" id="lp" type="password" required autocomplete="current-password"></div>
+      <button class="btn primary lg">Log in</button></form>${social}<p class="muted small" style="margin:0;text-align:center">New to Unbusyness? <a href="#/login?mode=signup${invite ? '&invite=1' : ''}">Create an account</a></p>`,
+    signup: `<form class="form" onsubmit="doSignup(event)"><div class="field"><label for="sn2">Your name</label><input class="input" id="sn2" required autocomplete="name" placeholder="Janez Novak"></div>
+      <div class="field"><label for="se">Email</label><input class="input" id="se" type="email" required autocomplete="email"></div>
+      <div class="field"><label for="sp">Password</label><input class="input" id="sp" type="password" required minlength="10" autocomplete="new-password"><span class="hint">At least 10 characters.</span></div>
+      <button class="btn primary lg">Create account</button></form>${social}<p class="muted small" style="margin:0;text-align:center">Already have an account? <a href="#/login${invite ? '?invite=1' : ''}">Log in</a></p>`,
+    forgot: `<form class="form" onsubmit="doForgot(event)"><div class="field"><label for="fe">Email</label><input class="input" id="fe" type="email" required autocomplete="email"></div><button class="btn primary lg">Send reset link</button></form>
+      <div id="forgotOut"></div><p class="muted small" style="margin:0;text-align:center"><a href="#/login">Back to log in</a></p>`,
+    reset: `<form class="form" onsubmit="doReset(event)"><div class="field"><label for="rp">New password</label><input class="input" id="rp" type="password" required minlength="10" autocomplete="new-password"><span class="hint">At least 10 characters.</span></div><button class="btn primary lg">Save new password</button></form>`,
+  };
+  const titles = { login: invite ? 'Join your team' : 'Log in', signup: invite ? 'Join your team' : 'Create your account', forgot: 'Forgot your password?', reset: 'Choose a new password' };
+  const subs = { login: invite ? 'Log in or create an account to see your jobs.' : 'The AI office manager for trade businesses.', signup: invite ? 'Create your Unbusyness account to join.' : 'Free to start. No credit card needed.', forgot: 'We will email you a link to choose a new password.', reset: 'You will be logged in right after.' };
   $('#root').innerHTML = `<div class="auth"><div class="authcard">
     <div class="row">${LOGO}<b style="font-size:20px;letter-spacing:-.6px">unbusyness</b></div>
-    <div><h1>${m.invite || qs.get('invite') ? 'Join your team' : 'Welcome'}</h1><p class="muted" style="margin:6px 0 0">${m.invite || qs.get('invite') ? 'Log in to see the jobs assigned to you.' : 'The AI office manager for trade businesses. Log in to continue.'}</p></div>
-    ${err ? `<div class="explain"><span class="ei">!</span><div>${err === 'invite' ? 'This invite link is no longer valid. Ask the owner for a new one.' : 'Login did not finish. Please try again.'}</div></div>` : ''}
-    <a class="btn primary lg" href="/api/login">Log in with Replit</a>
-    ${m.devLogin ? `<div class="or">or demo login</div><form class="form" onsubmit="devLogin(event)"><div class="field"><label for="dn">Your name</label><input class="input" id="dn" autocomplete="name" placeholder="Janez Novak"></div>
-      <div class="field"><label for="de">Email</label><input class="input" id="de" type="email" required autocomplete="email" placeholder="you@company.com"></div><button class="btn line lg">Continue</button></form>` : ''}
+    <div><h1>${titles[mode]}</h1><p class="muted" style="margin:6px 0 0">${subs[mode]}</p></div>
+    ${err ? `<div class="explain"><span class="ei">!</span><div>${err === 'invite' ? 'This invite link is no longer valid. Ask for a new one.' : esc(err.length > 12 ? err : 'Login did not finish. Please try again.')}</div></div>` : ''}
+    ${notice ? `<div class="explain" style="background:var(--ok-soft);color:#1f4a35"><span class="ei">✓</span><div>${esc(notice)}</div></div>` : ''}
+    ${forms[mode]}
+    ${cfg.replit && mode === 'login' ? '<a class="btn line sm" href="/api/login" style="align-self:center">Developer: log in with Replit</a>' : ''}
+    ${m.devLogin && mode === 'login' ? `<details><summary class="small">Demo login (development only)</summary><form class="form" style="margin-top:10px" onsubmit="devLogin(event)"><div class="field"><label for="dn">Your name</label><input class="input" id="dn" autocomplete="name"></div>
+      <div class="field"><label for="de">Email</label><input class="input" id="de" type="email" required></div><button class="btn line">Continue</button></form></details>` : ''}
   </div></div>`;
+  window._resetToken = qs.get('token');
 }
+async function afterLogin() { S.me = await api('GET', '/api/me'); location.hash = '#/'; route(); }
+async function doLogin(e) { e.preventDefault(); if (await act(() => api('POST', '/api/auth/login', { email: val('le'), password: val('lp') }))) afterLogin(); }
+async function doSignup(e) {
+  e.preventDefault();
+  const r = await act(() => api('POST', '/api/auth/signup', { name: val('sn2'), email: val('se'), password: val('sp') }));
+  if (r) { toast('Account created. Check your email to confirm your address.'); afterLogin(); }
+}
+async function doForgot(e) {
+  e.preventDefault();
+  if (await act(() => api('POST', '/api/auth/forgot', { email: val('fe') }))) $('#forgotOut').innerHTML = explain('If an account exists for this email, a reset link is on its way. Check your inbox and spam folder.');
+}
+async function doReset(e) { e.preventDefault(); if (await act(() => api('POST', '/api/auth/reset', { token: window._resetToken, password: val('rp') }), 'Password saved')) afterLogin(); }
+function verifyBanner() {
+  if (!S.me || !S.me.user || S.me.user.verified) return '';
+  return `<div class="explain" style="margin-bottom:14px"><span class="ei">!</span><div><b>Please confirm your email.</b> We sent a link to ${esc(S.me.user.email)}. <button class="btn line sm" style="margin-left:6px" onclick="resendVerify()">Send again</button></div></div>`;
+}
+async function resendVerify() { await act(() => api('POST', '/api/auth/verify/resend'), 'Confirmation email sent'); }
+
+/* ---------- Account ---------- */
+async function pAccount(qs) {
+  const a = await act(() => api('GET', '/api/auth/account')); if (!a) return;
+  if (qs.get('notice')) toast(NOTICES[qs.get('notice')] || 'Done');
+  if (qs.get('error')) toast(qs.get('error'), true);
+  const has = (p) => a.identities.some((i) => i.provider === p) || a.legacy === p;
+  const body = `${head('Account', 'Your account', esc(a.email))}
+    <div class="grid g2"><div class="stack"><div class="card cb stack"><b>Profile</b><form class="form" onsubmit="saveAccount(event)"><div class="field"><label for="an">Name</label><input class="input" id="an" value="${attr(a.name || '')}" required></div>
+      <div class="field"><span class="lab">EMAIL</span><div>${esc(a.email)} ${a.verified ? pill('Confirmed', 'ok') : pill('Not confirmed', 'apricot')}</div></div><button class="btn primary" style="justify-self:start">Save</button></form></div>
+      <div class="card cb stack"><b>${a.password ? 'Change password' : 'Set a password'}</b><form class="form" onsubmit="savePassword(event)">${a.password ? '<div class="field"><label for="apc">Current password</label><input class="input" id="apc" type="password" required autocomplete="current-password"></div>' : ''}
+        <div class="field"><label for="apn">New password</label><input class="input" id="apn" type="password" required minlength="10" autocomplete="new-password"><span class="hint">At least 10 characters. Other devices are logged out.</span></div><button class="btn primary" style="justify-self:start">Save password</button></form></div></div>
+      <div class="card cb stack"><b>Ways to log in</b>
+        <div class="li" style="padding:10px 0"><span class="ic sand">${svg('user')}</span><div class="grow"><b>Email and password</b><span class="s">${a.password ? 'Set' : 'Not set'}</span></div></div>
+        ${['google', 'microsoft'].filter((p) => a[p] || has(p)).map((p) => `<div class="li" style="padding:10px 0"><span class="ic sand">${svg('link')}</span><div class="grow"><b>${p === 'google' ? 'Google' : 'Microsoft'}</b><span class="s">${has(p) ? 'Connected' : 'Not connected'}</span></div>${has(p) ? (a.identities.some((i) => i.provider === p) ? `<button class="btn line sm" onclick="removeIdentity('${p}')">Remove</button>` : '') : `<a class="btn line sm" href="/api/auth/oauth/${p}/start?link=1">Connect</a>`}</div>`).join('')}
+        <a class="btn line" href="/api/logout">${svg('out', 16)}Log out</a></div></div>`;
+  if (manages()) shell('account', 'Your <b>account</b>', body); else phoneShell('Account', body, '#/my');
+}
+async function saveAccount(e) { e.preventDefault(); if (await act(() => api('PUT', '/api/auth/account', { name: val('an') }), 'Saved')) { await refreshMe(); route(); } }
+async function savePassword(e) { e.preventDefault(); if (await act(() => api('POST', '/api/auth/password', { current: val('apc'), password: val('apn') }), 'Password saved')) route(); }
+async function removeIdentity(p) { if (confirm('Remove this login method?') && await act(() => api('POST', `/api/auth/identities/${p}/remove`), 'Removed')) route(); }
 async function devLogin(e) {
   e.preventDefault();
   if (await act(() => api('POST', '/api/dev-login', { name: val('dn'), email: val('de') }))) { location.hash = '#/'; boot(); }
@@ -161,6 +227,7 @@ async function devLogin(e) {
 function pSetup() {
   $('#root').innerHTML = `<div class="auth"><div class="authcard" style="width:min(560px,100%)">
     <div class="row">${LOGO}<b style="font-size:20px">unbusyness</b></div>
+    ${verifyBanner()}
     <div><h1>Set up your business</h1><p class="muted" style="margin:6px 0 0">Two minutes. You can change everything later in Settings.</p></div>
     <form class="form two" onsubmit="createBusiness(event)">
       <div class="field full"><label for="bn">Business name</label><input class="input" id="bn" required placeholder="Demo Plumbing Co."></div>
@@ -503,7 +570,7 @@ async function saveDoc(customerOverride, reload) {
 async function sendDoc() {
   const { type, id } = S.doc;
   if (!(await saveDoc(null, false))) return;
-  const r = await act(() => api('POST', `/api/${type}s/${id}/send`), (x) => (x.delivery === 'sent' ? 'Sent to the customer by email' : x.delivery === 'failed' ? 'Saved, but the email failed. See Settings › Messages.' : 'Ready. Email is not connected yet, so copy the link and send it yourself.'));
+  const r = await act(() => api('POST', `/api/${type}s/${id}/send`), (x) => (x.delivery === 'sent' ? 'Sent to the customer by email' : x.delivery === 'failed' ? 'Saved, but the email failed. See Settings › Messages.' : 'Ready. No mailbox is connected yet, so copy the link and send it yourself (or connect one in Settings › Integrations).'));
   if (r) { S.doc.url = r.url; docEditor(type, id); }
 }
 async function docAction(action, msg) { const { type, id } = S.doc; if (await act(() => api('POST', `/api/${type}s/${id}/${action}`), msg)) docEditor(type, id); }
@@ -664,9 +731,9 @@ async function uploadPhoto(inp) {
 
 /* ---------- worker (crew) view ---------- */
 function phoneShell(title, inner, backHref) {
-  const b = S.me.business;
+  const b = S.me.business || { name: 'Unbusyness' };
   $('#root').innerHTML = `<div class="phone"><div class="ptop">${backHref ? `<a class="btn line sm" href="${backHref}">${svg('back', 14)}My jobs</a>` : `<div class="row">${LOGO}<div><div class="t">${esc(title)}</div><div class="muted small">${esc(b.name)}</div></div></div>`}
-    ${backHref ? '' : `<a class="btn line sm" href="/api/logout">${svg('out', 14)}Log out</a>`}</div>${inner}</div>`;
+    ${backHref ? '' : `<a class="btn line sm" href="#/account">${svg('user', 14)}Account</a>`}</div>${verifyBanner()}${inner}</div>`;
 }
 async function pMy() {
   phoneShell('My jobs', '<div class="empty">Loading…</div>');
@@ -700,7 +767,7 @@ async function pWorkerJob(id) {
 
 /* ---------- More (mobile) ---------- */
 function pMore() {
-  shell('more', 'Workspace / <b>More</b>', `<div class="card">${[['tasks', 'Tasks', 'check', 'tasks.manage'], ['customers', 'Customers', 'user', 'customers.manage'], ['quotes', 'Quotes', 'doc', 'money.manage'], ['settings', 'Settings', 'gear', 'settings']].filter((x) => navOk([0, 0, 0, 0, x[3]])).map((x) => `<a class="li" href="#/${x[0]}"><span class="ic sand">${svg(x[2])}</span><div class="grow"><b>${x[1]}</b></div>${x[0] === 'quotes' && S.counts.quotes ? pill(S.counts.quotes + ' to send', 'apricot') : ''}</a>`).join('')}<a class="li" href="/api/logout"><span class="ic sand">${svg('out')}</span><div class="grow"><b>Log out</b></div></a></div>`);
+  shell('more', 'Workspace / <b>More</b>', `<div class="card">${[['tasks', 'Tasks', 'check', 'tasks.manage'], ['customers', 'Customers', 'user', 'customers.manage'], ['quotes', 'Quotes', 'doc', 'money.manage'], ['settings', 'Settings', 'gear', 'settings']].filter((x) => navOk([0, 0, 0, 0, x[3]])).map((x) => `<a class="li" href="#/${x[0]}"><span class="ic sand">${svg(x[2])}</span><div class="grow"><b>${x[1]}</b></div>${x[0] === 'quotes' && S.counts.quotes ? pill(S.counts.quotes + ' to send', 'apricot') : ''}</a>`).join('')}<a class="li" href="#/account"><span class="ic sand">${svg('user')}</span><div class="grow"><b>Account</b></div></a><a class="li" href="/api/logout"><span class="ic sand">${svg('out')}</span><div class="grow"><b>Log out</b></div></a></div>`);
 }
 
 /* ---------- Settings ---------- */
@@ -782,7 +849,7 @@ async function pSettings(tab, qs) {
       <div class="stack">${block('email', 'Email', 'Quotes, invoices and reminders go out from your own address. Customer emails show on the customer page.', ['google', 'microsoft', 'imap'])}
       ${block('calendar', 'Calendar', 'Only time-based commitments are added: jobs, appointments, inspections and meetings. Internal tasks stay in Unbusyness.', ['google', 'microsoft'])}
       ${explain('<b>Unbusyness is the source of truth.</b> Changes go one way: from Unbusyness to your calendar. If you move an event in Google or Outlook, change it in Unbusyness too. Passwords and tokens are encrypted on the server and never shown in the browser.')}
-      <details class="card cb"><summary>Setup details for the administrator</summary><div class="stack" style="margin-top:10px"><div class="field"><span class="lab">GOOGLE REDIRECT URI</span><div class="code">${esc(v.redirectUris.google)}</div></div><div class="field"><span class="lab">MICROSOFT REDIRECT URI</span><div class="code">${esc(v.redirectUris.microsoft)}</div></div><span class="hint">Add these in Google Cloud Console and Microsoft Entra (Azure). Steps are in the README.</span></div></details></div>`;
+      <details class="card cb"><summary>Setup details for the administrator</summary><div class="stack" style="margin-top:10px"><div class="field"><span class="lab">GOOGLE REDIRECT URIS (add both)</span><div class="code">${esc(v.redirectUris.googleLogin)}\n${esc(v.redirectUris.google)}</div></div><div class="field"><span class="lab">MICROSOFT REDIRECT URIS (add both)</span><div class="code">${esc(v.redirectUris.microsoftLogin)}\n${esc(v.redirectUris.microsoft)}</div></div><span class="hint">Add these in Google Cloud Console and Microsoft Entra (Azure). Steps are in the README.</span></div></details></div>`;
   }
   if (tab === 'payments') {
     h += `<div class="grid g2"><div class="card cb stack"><b>Online payments with Stripe</b>
@@ -801,7 +868,7 @@ async function pSettings(tab, qs) {
   }
   if (tab === 'messages') {
     const box = await act(() => api('GET', '/api/outbox')) || [];
-    h += `${!S.me.email ? `<div style="margin-bottom:14px">${explain('<b>Email is not connected yet.</b> Messages are saved here instead of being sent. Add <b>RESEND_API_KEY</b> in Replit Secrets to send real emails (see the README).')}</div>` : ''}
+    h += `${!S.me.email ? `<div style="margin-bottom:14px">${explain('<b>No mailbox is connected yet.</b> Messages to customers are saved here instead of being sent. Connect your mailbox in <a href="#/settings/integrations">Settings › Integrations</a>.')}</div>` : ''}
       <div class="card"><div class="ch"><div><h2>Messages to customers</h2><p>Every email and text the app sent or prepared</p></div></div><div class="tscroll">${box.length ? `<table class="tbl"><thead><tr><th>When</th><th>To</th><th>Message</th><th>Status</th></tr></thead><tbody>${box.map((m) => `<tr><td class="muted" style="white-space:nowrap">${ago(m.created_at)}</td><td>${svg(m.channel === 'sms' ? 'phone' : 'send', 13)} ${esc(m.to_addr)}</td><td><b>${esc(m.subject || '')}</b><div class="muted small" style="white-space:pre-wrap;max-width:560px">${esc(String(m.body || '').slice(0, 240))}</div></td><td>${m.status === 'sent' ? pill('Sent', 'ok') : m.status === 'failed' ? `<span title="${attr(m.error || '')}">${pill('Failed', 'red')}</span>` : pill('Saved only', 'gray')}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No messages yet.</div>'}</div></div>`;
   }
   setContent(h);
