@@ -23,6 +23,24 @@ function getTransport() {
 }
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (m) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[m]));
+
+// Keep operator-visible delivery events useful without logging message contents,
+// recipient addresses, tokens, provider responses, or SMTP credentials.
+function logDelivery(category, status, details = {}) {
+  const event = { event: 'account_email_delivery', category, status, ...details };
+  const line = `[account-email] ${JSON.stringify(event)}`;
+  if (status === 'accepted_by_smtp') console.info(line);
+  else console.error(line);
+}
+
+function safeErrorDetails(error) {
+  const details = {};
+  if (/^E[A-Z0-9_]+$/.test(String(error && error.code || ''))) details.errorCode = error.code;
+  const responseCode = Number(error && error.responseCode);
+  if (Number.isInteger(responseCode) && responseCode >= 400 && responseCode <= 599) details.responseCode = responseCode;
+  return details;
+}
+
 // Simple branded HTML with one button.
 function layout({ title, intro, button, url, outro }) {
   return `<!doctype html><html><body style="margin:0;background:#FBFAF7;font-family:Arial,Helvetica,sans-serif;color:#14201E">
@@ -33,17 +51,29 @@ function layout({ title, intro, button, url, outro }) {
   ${outro ? `<p style="margin:18px 0 0;font-size:13px;color:#7A8481">${esc(outro)}</p>` : ''}</div></div></body></html>`;
 }
 
-async function sendSystemEmail(to, subject, text, html) {
+async function sendSystemEmail(to, subject, text, html, category = 'other') {
   if (!configured()) {
-    if (!isProd()) { console.log(`\n[system email → ${to}] ${subject}\n${text}\n`); return 'logged'; }
-    console.error(`System email NOT sent (SYSTEM_SMTP_* secrets missing): "${subject}" to ${to}`);
+    logDelivery(category, 'not_configured');
+    if (!isProd()) return 'logged';
     return 'not_configured';
   }
   try {
-    await getTransport().sendMail({ from: cfg().from, to, subject, text, html });
+    const info = await getTransport().sendMail({ from: cfg().from, to, subject, text, html });
+    const acceptedCount = Array.isArray(info && info.accepted) ? info.accepted.length : 0;
+    const rejectedCount = Array.isArray(info && info.rejected) ? info.rejected.length : 0;
+    if (rejectedCount) {
+      const status = acceptedCount ? 'partially_rejected' : 'rejected';
+      logDelivery(category, status, { acceptedCount, rejectedCount });
+      return 'failed';
+    }
+    if (!acceptedCount) {
+      logDelivery(category, 'failed', { reason: 'no_recipient_outcome' });
+      return 'failed';
+    }
+    logDelivery(category, 'accepted_by_smtp');
     return 'sent';
   } catch (e) {
-    console.error('System email failed:', e.message);
+    logDelivery(category, 'failed', safeErrorDetails(e));
     return 'failed';
   }
 }

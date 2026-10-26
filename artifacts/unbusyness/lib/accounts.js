@@ -57,7 +57,8 @@ async function sendVerify(req, user) {
   const url = `${originOf(req)}/api/auth/verify?token=${token}`;
   return sendSystemEmail(user.email, 'Confirm your email for Unbusyness',
     `Hi ${user.name || ''},\n\nPlease confirm your email address:\n${url}\n\nThe link works for 24 hours.`,
-    layout({ title: 'Confirm your email', intro: `Hi ${user.name || 'there'}, please confirm your email address to finish setting up your Unbusyness account.`, button: 'Confirm email', url, outro: 'The link works for 24 hours. If you did not create an account, ignore this email.' }));
+    layout({ title: 'Confirm your email', intro: `Hi ${user.name || 'there'}, please confirm your email address to finish setting up your Unbusyness account.`, button: 'Confirm email', url, outro: 'The link works for 24 hours. If you did not create an account, ignore this email.' }),
+    'confirmation');
 }
 
 // Join the company from a pending invite (same rules as auth.js upsertUser).
@@ -145,7 +146,8 @@ function routes(router) {
       const token = await makeToken(user.id, 'reset', 60);
       const url = `${originOf(req)}/#/reset?token=${token}`;
       await sendSystemEmail(user.email, 'Reset your Unbusyness password', `Reset your password here:\n${url}\n\nThe link works for 1 hour. If you did not ask for this, ignore this email.`,
-        layout({ title: 'Reset your password', intro: 'Click the button to choose a new password.', button: 'Choose a new password', url, outro: 'The link works for 1 hour and only once. If you did not ask for this, you can ignore this email.' }));
+        layout({ title: 'Reset your password', intro: 'Click the button to choose a new password.', button: 'Choose a new password', url, outro: 'The link works for 1 hour and only once. If you did not ask for this, you can ignore this email.' }),
+        'password_reset');
     }
     return { ok: true }; // same answer whether or not the email exists
   });
