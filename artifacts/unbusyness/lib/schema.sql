@@ -333,3 +333,7 @@ CREATE TABLE IF NOT EXISTS auth_tokens (
   used_at     TIMESTAMPTZ,
   created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- Team invites are bound to the invited person's email address (lib/invites.js).
+-- Older invites keep an empty address and still work, but can never change an existing membership.
+ALTER TABLE invites ADD COLUMN IF NOT EXISTS email TEXT NOT NULL DEFAULT '';

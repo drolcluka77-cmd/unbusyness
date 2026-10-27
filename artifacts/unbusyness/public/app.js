@@ -61,10 +61,10 @@ const manages = () => can('jobs.manage');
 const explain = (t) => `<div class="explain"><span class="ei">i</span><div>${t}</div></div>`;
 const pill = (txt, tone) => `<span class="pill ${tone}">${esc(txt)}</span>`;
 
-function toast(m, err) {
+function toast(m, err, ms) {
   const h = $('#toastHost');
   h.innerHTML = `<div class="toast ${err ? 'err' : ''}" role="status">${svg(err ? 'alert' : 'check', 16)}<span>${esc(m)}</span></div>`;
-  clearTimeout(window._tt); window._tt = setTimeout(() => (h.innerHTML = ''), err ? 5000 : 2800);
+  clearTimeout(window._tt); window._tt = setTimeout(() => (h.innerHTML = ''), ms || (err ? 5000 : 2800));
 }
 async function api(method, url, body) {
   const r = await fetch(url, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined, credentials: 'same-origin' });
@@ -94,8 +94,10 @@ const NEXT = { scheduled: ['on_the_way', "I'm on my way", 'truck'], on_the_way: 
 window.addEventListener('hashchange', route);
 async function boot() {
   try { S.me = await api('GET', '/api/me'); } catch { S.me = { user: null }; }
-  route();
+  route(); showNotice();
 }
+// One-time message from the server after a login or an invite link (e.g. "you are already a member")
+function showNotice() { const n = S.me && S.me.notice; if (n && n.message) { S.me.notice = null; toast(n.message, n.status !== 'joined', n.status === 'joined' ? 3500 : 12000); } }
 function route() {
   const h = location.hash || '#/';
   $('#layer').innerHTML = ''; S.nav = (S.nav || 0) + 1;
@@ -157,11 +159,11 @@ async function pLogin(qs, mode) {
       ${cfg.google ? `<a class="btn line lg" href="/api/auth/oauth/google/start"><svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>Continue with Google</a>` : ''}
       ${cfg.microsoft ? `<a class="btn line lg" href="/api/auth/oauth/microsoft/start"><svg width="16" height="16" viewBox="0 0 23 23" aria-hidden="true"><path fill="#f35325" d="M1 1h10v10H1z"/><path fill="#81bc06" d="M12 1h10v10H12z"/><path fill="#05a6f0" d="M1 12h10v10H1z"/><path fill="#ffba08" d="M12 12h10v10H12z"/></svg>Continue with Microsoft</a>` : ''}</div>` : '';
   const forms = {
-    login: `<form class="form" onsubmit="doLogin(event)"><div class="field"><label for="le">Email</label><input class="input" id="le" type="email" required autocomplete="email" placeholder="you@company.com"></div>
+    login: `<form class="form" onsubmit="doLogin(event)"><div class="field"><label for="le">Email</label><input class="input" id="le" type="email" required autocomplete="email" placeholder="you@company.com" value="${attr(m.inviteEmail || '')}"></div>
       <div class="field"><div class="row between"><label for="lp">Password</label><a href="#/login?mode=forgot" class="small">Forgot password?</a></div><input class="input" id="lp" type="password" required autocomplete="current-password"></div>
       <button class="btn primary lg">Log in</button></form>${social}<p class="muted small" style="margin:0;text-align:center">New to Unbusyness? <a href="#/login?mode=signup${invite ? '&invite=1' : ''}">Create an account</a></p>`,
     signup: `<form class="form" onsubmit="doSignup(event)"><div class="field"><label for="sn2">Your name</label><input class="input" id="sn2" required autocomplete="name" placeholder="Janez Novak"></div>
-      <div class="field"><label for="se">Email</label><input class="input" id="se" type="email" required autocomplete="email"></div>
+      <div class="field"><label for="se">Email</label><input class="input" id="se" type="email" required autocomplete="email" value="${attr(m.inviteEmail || '')}"></div>
       <div class="field"><label for="sp">Password</label><input class="input" id="sp" type="password" required minlength="10" autocomplete="new-password"><span class="hint">At least 10 characters.</span></div>
       <button class="btn primary lg">Create account</button></form>${social}<p class="muted small" style="margin:0;text-align:center">Already have an account? <a href="#/login${invite ? '?invite=1' : ''}">Log in</a></p>`,
     forgot: `<form class="form" onsubmit="doForgot(event)"><div class="field"><label for="fe">Email</label><input class="input" id="fe" type="email" required autocomplete="email"></div><button class="btn primary lg">Send reset link</button></form>
@@ -174,6 +176,7 @@ async function pLogin(qs, mode) {
     <div class="row">${LOGO}<b style="font-size:20px;letter-spacing:-.6px">unbusyness</b></div>
     <div><h1>${titles[mode]}</h1><p class="muted" style="margin:6px 0 0">${subs[mode]}</p></div>
     ${err ? `<div class="explain"><span class="ei">!</span><div>${err === 'invite' ? 'This invite link is no longer valid. Ask for a new one.' : esc(err.length > 12 ? err : 'Login did not finish. Please try again.')}</div></div>` : ''}
+    ${m.inviteEmail && (mode === 'login' || mode === 'signup') ? `<div class="explain"><span class="ei">i</span><div>This invite is for <b>${esc(m.inviteEmail)}</b>. Use that email address to join.</div></div>` : ''}
     ${notice ? `<div class="explain" style="background:var(--ok-soft);color:#1f4a35"><span class="ei">✓</span><div>${esc(notice)}</div></div>` : ''}
     ${forms[mode]}
     ${cfg.replit && mode === 'login' ? '<a class="btn line sm" href="/api/login" style="align-self:center">Developer: log in with Replit</a>' : ''}
@@ -182,7 +185,7 @@ async function pLogin(qs, mode) {
   </div></div>`;
   window._resetToken = qs.get('token');
 }
-async function afterLogin() { S.me = await api('GET', '/api/me'); location.hash = '#/'; route(); }
+async function afterLogin() { S.me = await api('GET', '/api/me'); location.hash = '#/'; route(); showNotice(); }
 async function doLogin(e) { e.preventDefault(); if (await act(() => api('POST', '/api/auth/login', { email: val('le'), password: val('lp') }))) afterLogin(); }
 async function doSignup(e) {
   e.preventDefault();
@@ -343,21 +346,197 @@ async function callStatus(id, status) { if (await act(() => api('POST', `/api/ca
 async function quoteFromCall(id) { const r = await act(() => api('POST', `/api/calls/${id}/quote`), 'Quote drafted from the call'); if (r) go(`#/quotes/${r.id}`); }
 
 /* ---------- Customers ---------- */
+/* ---------- Lists: filters, sorting, paging (invoices, quotes, customers, jobs) ----------
+   Filters live in the URL (#/invoices?status=unpaid&period=last_month) so Back works and a view can be shared,
+   and the last filter per list is remembered in this browser. */
+const LIST_KEYS = ['q', 'status', 'f', 'customer_id', 'period', 'from', 'to', 'min', 'max', 'assignee', 'kind', 'sort', 'dir', 'page'];
+const LISTS = {};
+S.list = {}; S.listSeq = 0;
+const ymd = (y, m, d) => new Date(Date.UTC(y, m - 1, d)).toISOString().slice(0, 10);
+function periodRange(p, st) {
+  const t = partsIn(new Date()); const { y, m, d } = t;
+  const wd = (new Date(Date.UTC(y, m - 1, d)).getUTCDay() + 6) % 7;
+  const q0 = Math.floor((m - 1) / 3) * 3 + 1;
+  return ({
+    this_month: [ymd(y, m, 1), ymd(y, m + 1, 0)], last_month: [ymd(y, m - 1, 1), ymd(y, m, 0)], last_30: [ymd(y, m, d - 29), ymd(y, m, d)],
+    this_quarter: [ymd(y, q0, 1), ymd(y, q0 + 3, 0)], this_year: [ymd(y, 1, 1), ymd(y, 12, 31)], last_year: [ymd(y - 1, 1, 1), ymd(y - 1, 12, 31)],
+    upcoming: [ymd(y, m, d), ''], this_week: [ymd(y, m, d - wd), ymd(y, m, d - wd + 6)], next_7: [ymd(y, m, d), ymd(y, m, d + 6)], past: ['', ymd(y, m, d - 1)],
+    custom: [st.from || '', st.to || ''],
+  })[p] || ['', ''];
+}
+const PERIODS_MONEY = [['', 'Any date'], ['this_month', 'This month'], ['last_month', 'Last month'], ['last_30', 'Last 30 days'], ['this_quarter', 'This quarter'], ['this_year', 'This year'], ['last_year', 'Last year'], ['custom', 'Custom dates…']];
+const PERIODS_JOBS = [['upcoming', 'From today on'], ['this_week', 'This week'], ['next_7', 'Next 7 days'], ['this_month', 'This month'], ['past', 'Past'], ['', 'Any date'], ['unscheduled', 'Not scheduled'], ['custom', 'Custom dates…']];
+
+function listState(page, qs) {
+  const defs = LISTS[page].defs; let o = {};
+  if (qs && [...qs.keys()].some((k) => LIST_KEYS.includes(k))) { for (const k of LIST_KEYS) if (qs.get(k) !== null) o[k] = qs.get(k); }
+  else { try { o = JSON.parse(store.get('ub.list.' + page) || '{}') || {}; } catch { o = {}; } }
+  if (o.f && page !== 'customers') { o.status = o.status || o.f; delete o.f; } // old links like #/invoices?f=unpaid
+  return { ...defs, ...o };
+}
+function listParams(page, st, extra = {}) {
+  const defs = LISTS[page].defs; const out = {};
+  for (const [k, v] of Object.entries({ ...st, ...extra })) if (v !== '' && v !== null && v !== undefined && String(v) !== String(defs[k] ?? '')) out[k] = v;
+  if (st.period !== 'custom') { delete out.from; delete out.to; }
+  if (Number(out.page) <= 1) delete out.page;
+  return out;
+}
+function syncListUrl(page) {
+  const p = listParams(page, S.list[page]); const { page: _p, ...remember } = p;
+  store.set('ub.list.' + page, JSON.stringify(remember));
+  const qstr = new URLSearchParams(p).toString();
+  const base = location.hash.split('?')[0].replace(/\/\d+$/, '');
+  history.replaceState(null, '', `${base || '#/' + page}${qstr ? '?' + qstr : ''}`);
+}
+function apiQuery(page, st, noPaging) {
+  // Send every set value (defaults too): the server has its own defaults, the client's must win.
+  const p = {}; for (const k of LIST_KEYS) if (st[k] !== '' && st[k] !== null && st[k] !== undefined) p[k] = st[k];
+  if (st.period !== 'custom') { delete p.from; delete p.to; }
+  Object.assign(p, noPaging ? {} : { page: st.page || 1, per: 50 });
+  if (noPaging) { delete p.page; delete p.sort; delete p.dir; }
+  if (st.period === 'unscheduled') { p.when = 'unscheduled'; delete p.period; }
+  else if (st.period) { const [f, t] = periodRange(st.period, st); delete p.period; if (f) p.from = f; else delete p.from; if (t) p.to = t; else delete p.to; }
+  return new URLSearchParams(p).toString();
+}
+const listActive = (page) => { const st = S.list[page]; const d = LISTS[page].defs; return ['q', 'status', 'f', 'customer_id', 'period', 'min', 'max', 'assignee', 'kind'].some((k) => (st[k] || '') !== (d[k] || '')); };
+
+// Draw the frame once; later filter changes only redraw the toolbar and the table, so typing in search never loses focus.
+async function listMount(page, qs, frame) {
+  S.list[page] = listState(page, qs);
+  if (LISTS[page].prepare) { await LISTS[page].prepare(); if (gone(page)) return; }
+  setContent(frame + `<div id="lvstats"></div><div class="lvbar" id="lvbar" role="search"></div><div class="card"><div class="tscroll" id="lvbody"><div class="empty">Loading…</div></div><div id="lvpager"></div></div>`);
+  drawListBar(page); syncListUrl(page);
+  return listLoad(page);
+}
+function drawListBar(page) {
+  const bar = $('#lvbar'); if (!bar) return;
+  const st = S.list[page];
+  bar.innerHTML = LISTS[page].bar(st) + (st.period === 'custom' ? `<span class="lvdates"><input class="input" type="date" aria-label="From" value="${attr(st.from || '')}" onchange="setList('${page}',{from:this.value})"><span class="muted">–</span><input class="input" type="date" aria-label="To" value="${attr(st.to || '')}" onchange="setList('${page}',{to:this.value})"></span>` : '') +
+    (listActive(page) ? `<button class="btn line sm" onclick="clearList('${page}')">${svg('x', 14)}Clear filters</button>` : '');
+}
+async function listLoad(page) {
+  const cfg = LISTS[page]; const st = S.list[page]; const seq = ++S.listSeq; const nav = S.nav;
+  const body = $('#lvbody'); if (body) body.classList.add('loading');
+  let r; try { r = await api('GET', `${cfg.url}?${apiQuery(page, st)}`); } catch (e) { if (seq === S.listSeq && $('#lvbody')) { $('#lvbody').classList.remove('loading'); $('#lvbody').innerHTML = `<div class="empty">${esc(e.message)}</div>`; } return; }
+  if (seq !== S.listSeq || nav !== S.nav || gone(page) || !$('#lvbody')) return; // a newer filter or another page won
+  if (r.total && r.page > r.pages) { st.page = r.pages; syncListUrl(page); return listLoad(page); }
+  if (cfg.stats) $('#lvstats').innerHTML = cfg.stats(r, st);
+  const b = $('#lvbody'); b.classList.remove('loading');
+  b.innerHTML = r.rows.length ? cfg.table(r, st) : `<div class="empty">${listActive(page) ? 'Nothing matches these filters.' : cfg.empty}</div>`;
+  $('#lvpager').innerHTML = pager(page, r, cfg.summary ? cfg.summary(r) : '');
+  if (cfg.after) cfg.after(r, st);
+}
+function setList(page, patch, quiet) {
+  const st = S.list[page]; if (!st) return;
+  Object.assign(st, patch);
+  if (!('page' in patch)) st.page = 1;
+  if ('period' in patch && patch.period === 'custom' && !st.from && !st.to) { const [f, t] = periodRange('this_month', st); st.from = f; st.to = t; }
+  syncListUrl(page); if (!quiet) drawListBar(page); listLoad(page);
+}
+function clearList(page) { const d = LISTS[page].defs; S.list[page] = { ...d, sort: S.list[page].sort, dir: S.list[page].dir }; delete S.list[page].from; delete S.list[page].to; syncListUrl(page); drawListBar(page); listLoad(page); }
+let searchTimer;
+function listSearch(page, v) { clearTimeout(searchTimer); searchTimer = setTimeout(() => setList(page, { q: v.trim() }, true), 300); }
+function sortBy(page, key) {
+  const st = S.list[page]; const firstDir = (LISTS[page].sortDir || {})[key] || 'desc';
+  setList(page, st.sort === key ? { sort: key, dir: st.dir === 'asc' ? 'desc' : 'asc' } : { sort: key, dir: firstDir }, true);
+}
+function listGo(page, n) { setList(page, { page: n }, true); const c = $('#content'); if (c) c.scrollTo ? c.scrollTo({ top: 0 }) : null; window.scrollTo({ top: 0 }); }
+
+// UI bits
+const lvSearch = (page, st, ph) => `<input class="input lvq" id="lvq" type="search" placeholder="${attr(ph)}" aria-label="${attr(ph)}" value="${attr(st.q || '')}" oninput="listSearch('${page}',this.value)" onkeydown="if(event.key==='Enter'){clearTimeout(searchTimer);setList('${page}',{q:this.value.trim()},true)}">`;
+const lvSelect = (page, key, value, opts, label) => `<select class="input" aria-label="${attr(label)}" onchange="setList('${page}',{${key}:this.value})">${opts.map(([v, t]) => `<option value="${attr(v)}" ${String(v) === String(value || '') ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select>`;
+const lvTabs = (page, key, value, opts) => `<div class="tabs" role="tablist">${opts.map(([v, t, n]) => `<button role="tab" aria-selected="${String(v) === String(value || '')}" class="${String(v) === String(value || '') ? 'on' : ''}" onclick="setList('${page}',{${key}:'${v}'})">${esc(t)}${n !== undefined && n !== null ? ` <span class="tabn">${n}</span>` : ''}</button>`).join('')}</div>`;
+const customerOpts = () => [['', 'All customers'], ...[...(S.customers || [])].sort((a, b) => String(a.name).localeCompare(String(b.name))).map((c) => [c.id, c.name || c.phone || 'Customer #' + c.id])];
+function sortTh(page, st, key, label, cls = '') {
+  const on = st.sort === key; const arrow = on ? (st.dir === 'asc' ? '▲' : '▼') : '▾';
+  return `<th class="${cls}" aria-sort="${on ? (st.dir === 'asc' ? 'ascending' : 'descending') : 'none'}"><button class="sorth ${on ? 'on' : ''}" onclick="sortBy('${page}','${key}')">${label}<i aria-hidden="true">${arrow}</i></button></th>`;
+}
+function pager(page, r, summary) {
+  const a = r.total ? (r.page - 1) * r.per + 1 : 0; const b = Math.min(r.total, r.page * r.per);
+  return `<div class="pager"><span>${r.total ? `${a}–${b} of ${r.total}` : '0 results'}${summary ? ' · ' + summary : ''}</span>${r.pages > 1 ? `<div class="btns"><button class="btn line sm" ${r.page <= 1 ? 'disabled' : ''} onclick="listGo('${page}',${r.page - 1})">${svg('back', 14)}Previous</button><span class="muted small">Page ${r.page} of ${r.pages}</span><button class="btn line sm" ${r.page >= r.pages ? 'disabled' : ''} onclick="listGo('${page}',${r.page + 1})">Next<span style="display:inline-flex;transform:scaleX(-1)">${svg('back', 14)}</span></button></div>` : ''}</div>`;
+}
+
+/* ---------- Customers ---------- */
 async function loadCustomers(force) { if (!S.customers || force) S.customers = await api('GET', '/api/customers'); return S.customers; }
-async function pCustomers(id) {
+LISTS.customers = {
+  url: '/api/customers', defs: { f: 'all', sort: 'last', dir: 'desc', q: '' }, sortDir: { name: 'asc' },
+  empty: 'No customers yet. They are added automatically when someone calls, or add one yourself.',
+  bar: (st) => `<div id="lvtabs">${lvTabs('customers', 'f', st.f, [['all', 'All'], ['owes', 'Owes money'], ['overdue', 'Overdue'], ['open_quote', 'Open quote'], ['upcoming', 'Upcoming job']])}</div><div class="lvrow">${lvSearch('customers', st, 'Search name, phone, email, address…')}</div>`,
+  after: (r, st) => { const t = $('#lvtabs'); if (t) t.innerHTML = lvTabs('customers', 'f', st.f, [['all', 'All', r.counts.all], ['owes', 'Owes money', r.counts.owes], ['overdue', 'Overdue', r.counts.overdue], ['open_quote', 'Open quote', r.counts.open_quote], ['upcoming', 'Upcoming job', r.counts.upcoming]]); },
+  table: (r, st) => `<table class="tbl"><thead><tr>${sortTh('customers', st, 'name', 'Name')}<th class="hide-m">Phone</th><th class="hide-m">Address</th>${sortTh('customers', st, 'last', 'Last activity', 'hide-m')}${sortTh('customers', st, 'jobs', 'Jobs', 'num')}${sortTh('customers', st, 'balance', 'Balance', 'num')}</tr></thead><tbody>
+    ${r.rows.map((c) => `<tr class="click" onclick="go('#/customers/${c.id}')"><td><b>${esc(c.name)}</b><div class="muted small">${esc(c.email || '')}${c.open_quotes ? ` · <span style="color:var(--slate,#4F5F80)">${c.open_quotes} open quote${c.open_quotes > 1 ? 's' : ''}</span>` : ''}${c.next_job ? ` · Next job ${fDay(c.next_job)}` : ''}</div></td><td class="hide-m">${esc(c.phone)}</td><td class="hide-m muted">${esc(c.address)}</td><td class="hide-m muted">${c.last_activity ? ago(c.last_activity) : '—'}</td><td class="num">${c.jobs}</td><td class="num">${c.balance ? `<b style="color:var(--apricot-ink)">${money0(c.balance)}</b>` : '<span class="muted">—</span>'}</td></tr>`).join('')}</tbody></table>`,
+};
+async function pCustomers(id, qs) {
   shell('customers', 'Workspace / <b>Customers</b>');
   if (id) return customerDetail(id);
-  const list = await act(() => loadCustomers(true)); if (!list || gone('customers')) return;
-  setContent(head('Customers', `${list.length} customers`, 'Everyone who called or got a quote, job or invoice.', `<button class="btn primary" onclick="customerForm()">${svg('plus', 16)}New customer</button>`) +
-    `<div class="card"><div class="cb" style="border-bottom:1px solid var(--line2)"><input class="input" id="cs" placeholder="Search name, phone, address…" oninput="filterCustomers()" aria-label="Search customers"></div><div class="tscroll" id="ctable"></div></div>`);
-  filterCustomers();
+  return listMount('customers', qs, head('Customers', 'Customers', 'Everyone who called or got a quote, job or invoice.', `<button class="btn primary" onclick="customerForm()">${svg('plus', 16)}New customer</button>`));
 }
-function filterCustomers() {
-  const q = val('cs').toLowerCase();
-  const rows = S.customers.filter((c) => !q || [c.name, c.phone, c.address, c.email].join(' ').toLowerCase().includes(q));
-  $('#ctable').innerHTML = rows.length ? `<table class="tbl"><thead><tr><th>Name</th><th class="hide-m">Phone</th><th class="hide-m">Address</th><th class="num">Jobs</th><th class="num">Balance</th></tr></thead><tbody>
-    ${rows.map((c) => `<tr class="click" onclick="go('#/customers/${c.id}')"><td><b>${esc(c.name)}</b><div class="muted small">${esc(c.email || '')}</div></td><td class="hide-m">${esc(c.phone)}</td><td class="hide-m muted">${esc(c.address)}</td><td class="num">${c.jobs}</td><td class="num">${c.balance ? `<b style="color:var(--apricot-ink)">${money0(c.balance)}</b>` : '<span class="muted">—</span>'}</td></tr>`).join('')}</tbody></table>` : '<div class="empty">No customers found.</div>';
+
+/* ---------- Quotes ---------- */
+LISTS.quotes = {
+  url: '/api/quotes', defs: { status: '', sort: 'number', dir: 'desc', q: '', customer_id: '', period: '' }, sortDir: { customer: 'asc' },
+  prepare: () => loadCustomers().catch(() => null),
+  empty: 'No quotes yet. They appear here when a caller asks for a price, or create one yourself.',
+  stats: (r) => { const s = r.stats; const done = s.accepted + s.declined; S.counts.quotes = s.drafts;
+    return `<div class="grid g4" style="margin-bottom:16px">${statBtn('quotes', { status: 'draft' }, 'To check and send', s.drafts, 'drafts', 'doc', 'apricot')}${statBtn('quotes', { status: 'sent' }, 'Waiting for customer', s.open, money0(s.open_sum), 'clock', 'slate')}${statBtn('quotes', { status: 'accepted' }, 'Accepted', s.accepted, money0(s.accepted_sum), 'check', 'green')}${stat('Win rate', done ? Math.round(s.accepted / done * 100) + '%' : '—', 'accepted of decided', 'spark', 'green')}</div>`; },
+  bar: (st) => lvTabs('quotes', 'status', st.status, [['', 'All'], ['draft', 'Drafts'], ['sent', 'Sent'], ['viewed', 'Viewed'], ['expired', 'Expired'], ['accepted', 'Accepted'], ['declined', 'Declined']]) +
+    `<div class="lvrow">${lvSearch('quotes', st, 'Search number, work, customer…')}${lvSelect('quotes', 'customer_id', st.customer_id, customerOpts(), 'Customer')}${lvSelect('quotes', 'period', st.period, PERIODS_MONEY, 'Date')}</div>`,
+  summary: (r) => `${moneyFmt(r.sum)} total`,
+  table: (r, st) => `<table class="tbl"><thead><tr>${sortTh('quotes', st, 'number', 'Number')}${sortTh('quotes', st, 'customer', 'Customer')}<th class="hide-m">Work</th>${sortTh('quotes', st, 'date', 'Date', 'hide-m')}<th class="hide-m">Valid until</th>${sortTh('quotes', st, 'status', 'Status')}${sortTh('quotes', st, 'total', 'Total', 'num')}</tr></thead><tbody>
+    ${r.rows.map((q) => `<tr class="click" onclick="go('#/quotes/${q.id}')"><td><b>${esc(q.number)}</b></td><td>${esc(q.customer_name || '—')}</td><td class="hide-m muted">${esc(q.title)}</td><td class="hide-m">${fDate(q.created_at)}</td><td class="hide-m ${q.expired ? '' : 'muted'}" ${q.expired ? 'style="color:var(--red)"' : ''}>${fDate(q.valid_until)}</td><td>${statusPill.quote(q)}</td><td class="num"><b>${moneyFmt(q.total)}</b></td></tr>`).join('')}</tbody></table>`,
+};
+// Stat tile that applies a filter instead of navigating away
+const statBtn = (page, patch, l, n, s, ic, tone) => `<button class="card stat statbtn" onclick='setList("${page}",${JSON.stringify(patch)})'><div class="lbl">${l}<span class="ic ${tone}">${svg(ic)}</span></div><b>${n}</b><small>${s}</small></button>`;
+async function pQuotes(id, qs) {
+  shell('quotes', 'Money / <b>Quotes</b>');
+  if (id) return docEditor('quote', id);
+  return listMount('quotes', qs, head('Quotes', 'Quotes', 'The AI drafts them from calls. You check the price and send.', `<button class="btn primary" onclick="newQuote()">${svg('plus', 16)}New quote</button>`));
 }
+async function newQuote(customerId) {
+  const r = await act(() => api('POST', '/api/quotes', { customer_id: customerId || null }));
+  if (r) go(`#/quotes/${r.id}`);
+}
+
+/* ---------- Invoices ---------- */
+LISTS.invoices = {
+  url: '/api/invoices', defs: { status: 'all', sort: 'number', dir: 'desc', q: '', customer_id: '', period: '', min: '', max: '' }, sortDir: { customer: 'asc' },
+  prepare: () => loadCustomers().catch(() => null),
+  empty: 'No invoices yet. They are created when a job is finished.',
+  stats: (r) => { const s = r.stats;
+    return `<div class="grid g4" style="margin-bottom:16px">${statBtn('invoices', { status: 'unpaid' }, 'Waiting to be paid', money0(s.unpaid_sum), `${s.unpaid} invoices`, 'clock', 'apricot')}${statBtn('invoices', { status: 'overdue' }, 'Overdue', money0(s.overdue_sum), `${s.overdue} past due date`, 'alert', 'red')}${statBtn('invoices', { status: 'paid', period: '' }, 'Paid in the last 7 days', money0(s.paid_week_sum), `${s.paid_week} invoices`, 'check', 'green')}${statBtn('invoices', { status: 'draft' }, 'Drafts to send', s.drafts, 'from finished jobs', 'doc', 'slate')}</div>`; },
+  bar: (st) => lvTabs('invoices', 'status', st.status, [['all', 'All'], ['draft', 'Drafts'], ['unpaid', 'Unpaid'], ['overdue', 'Overdue'], ['paid', 'Paid'], ['void', 'Void']]) +
+    `<div class="lvrow">${lvSearch('invoices', st, 'Search number, customer, job…')}${lvSelect('invoices', 'customer_id', st.customer_id, customerOpts(), 'Customer')}${lvSelect('invoices', 'period', st.period, PERIODS_MONEY, 'Issue date')}
+    <span class="lvdates" title="Amount"><input class="input lvnum" type="number" min="0" step="1" inputmode="decimal" placeholder="Min ${cur()}" aria-label="Minimum amount" value="${attr(st.min || '')}" onchange="setList('invoices',{min:this.value})"><span class="muted">–</span><input class="input lvnum" type="number" min="0" step="1" inputmode="decimal" placeholder="Max" aria-label="Maximum amount" value="${attr(st.max || '')}" onchange="setList('invoices',{max:this.value})"></span></div>`,
+  summary: (r) => `${moneyFmt(r.sum)} total`,
+  after: (r, st) => { const a = $('#invExport'); if (a) a.href = `/api/export/invoices.csv?${apiQuery('invoices', st, true)}`; },
+  table: (r, st) => `<table class="tbl"><thead><tr>${sortTh('invoices', st, 'number', 'Number')}${sortTh('invoices', st, 'customer', 'Customer')}<th class="hide-m">Job</th>${sortTh('invoices', st, 'issued', 'Issued', 'hide-m')}${sortTh('invoices', st, 'due', 'Due', 'hide-m')}${sortTh('invoices', st, 'status', 'Status')}${sortTh('invoices', st, 'total', 'Total', 'num')}</tr></thead><tbody>
+    ${r.rows.map((i) => `<tr class="click" onclick="go('#/invoices/${i.id}')"><td><b>${esc(i.number)}</b></td><td>${esc(i.customer_name || '—')}</td><td class="hide-m muted">${esc(i.job_title || '')}</td><td class="hide-m">${fDate(i.issue_date)}</td><td class="hide-m">${fDate(i.due_date)}</td><td>${statusPill.invoice(i)}</td><td class="num"><b>${moneyFmt(i.total)}</b></td></tr>`).join('')}</tbody></table>`,
+};
+async function pInvoices(id, qs) {
+  shell('invoices', 'Money / <b>Invoices</b>');
+  if (id) return docEditor('invoice', id);
+  return listMount('invoices', qs, head('Money', 'Invoices', 'Created when a job is finished. Unpaid invoices get friendly reminders automatically.', `<div class="btns"><a class="btn line" id="invExport" href="/api/export/invoices.csv" title="Exports the invoices that match your filters">${svg('dl', 16)}Export for accountant</a><button class="btn primary" onclick="newInvoice()">${svg('plus', 16)}New invoice</button></div>`));
+}
+async function newInvoice() { const r = await act(() => api('POST', '/api/invoices', {})); if (r) go(`#/invoices/${r.id}`); }
+
+/* ---------- Jobs: list view (next to the week board) ---------- */
+LISTS.jobs = {
+  url: '/api/jobs', defs: { status: 'open', sort: 'when', dir: 'asc', q: '', assignee: '', kind: '', period: 'upcoming' }, sortDir: { when: 'asc', title: 'asc', customer: 'asc', assignee: 'asc', status: 'asc' },
+  empty: 'No jobs yet.',
+  bar: (st) => `<div class="lvrow">${lvSearch('jobs', st, 'Search job, customer, address…')}
+    ${lvSelect('jobs', 'assignee', st.assignee, [['', 'Everyone'], ['none', 'Unassigned'], ...S.me.team.filter((t) => t.active).map((t) => [t.id, (t.name || t.email) + (t.id === S.me.user.id ? ' (you)' : '')])], 'Worker')}
+    ${lvSelect('jobs', 'status', st.status, [['open', 'Not done yet'], ['tentative', 'Requested by AI'], ['scheduled', 'Scheduled'], ['on_the_way', 'On the way'], ['in_progress', 'Working'], ['done', 'Done'], ...(can('money.manage') ? [['not_invoiced', 'Done, not invoiced']] : []), ['all', 'Any status']], 'Status')}
+    ${lvSelect('jobs', 'kind', st.kind, [['', 'All types'], ...Object.entries(KIND)], 'Type')}
+    ${lvSelect('jobs', 'period', st.period, PERIODS_JOBS, 'When')}</div>`,
+  summary: (r) => (r.sum !== undefined && can('money.manage') ? `${money0(r.sum)} of work` : ''),
+  table: (r, st) => { const money = can('money.manage');
+    return `<table class="tbl"><thead><tr>${sortTh('jobs', st, 'when', 'When')}${sortTh('jobs', st, 'title', 'Job')}${sortTh('jobs', st, 'customer', 'Customer', 'hide-m')}${sortTh('jobs', st, 'assignee', 'Who')}${sortTh('jobs', st, 'status', 'Status')}${money ? sortTh('jobs', st, 'price', 'Price', 'num hide-m') : ''}</tr></thead><tbody>
+    ${r.rows.map((j) => `<tr class="click" onclick="go('#/jobs/${j.id}')"><td style="white-space:nowrap">${j.scheduled_at ? `<b>${fDay(j.scheduled_at)}</b><div class="muted small">${fTime(j.scheduled_at)}</div>` : '<span class="muted">Not scheduled</span>'}</td><td><b>${esc(j.title)}</b><div class="muted small">${esc(KIND[j.kind] || 'Job')}${j.photo_count ? ` · ${j.photo_count} photo${j.photo_count > 1 ? 's' : ''}` : ''}${money && j.invoice_status ? ` · Invoice ${esc(j.invoice_status)}` : ''}</div></td><td class="hide-m">${esc(j.customer_name || '—')}<div class="muted small">${esc(j.address || '')}</div></td><td><span class="who"><i style="background:${j.assignee_color || '#8A938F'}"></i>${esc(j.assignee || 'Unassigned')}</span></td><td>${j.tentative ? pill('Requested by AI', 'apricot') : statusPill.job(j.status)}</td>${money ? `<td class="num hide-m">${Number(j.price) ? money0(j.price) : '<span class="muted">—</span>'}</td>` : ''}</tr>`).join('')}</tbody></table>`; },
+};
+const jobsView = () => (store.get('ub.jobs.view') === 'list' ? 'list' : 'board');
+function setJobsView(v) { store.set('ub.jobs.view', v); history.replaceState(null, '', '#/jobs'); route(); }
+const viewToggle = (v) => `<div class="tabs" role="tablist" aria-label="View"><button role="tab" aria-selected="${v === 'board'}" class="${v === 'board' ? 'on' : ''}" onclick="setJobsView('board')">Week</button><button role="tab" aria-selected="${v === 'list'}" class="${v === 'list' ? 'on' : ''}" onclick="setJobsView('list')">List</button></div>`;
+
 function customerForm(c = {}, after) {
   window._afterCustomer = after;
   modal(c.id ? 'Edit customer' : 'New customer', `<form class="form two" onsubmit="saveCustomer(event, ${c.id || 0})">
@@ -386,8 +565,8 @@ async function customerDetail(id) {
     `<div class="grid g2"><div class="stack"><div class="card cb stack"><div class="fld"><small>Address</small><b>${esc(c.address || '—')}</b>${c.address ? ` <a href="${mapHref(c.address)}" target="_blank" rel="noopener">Map</a>` : ''}</div><div class="fld"><small>Notes</small><b style="font-weight:500">${esc(c.notes || '—')}</b></div></div>
       ${sec('Jobs', d.jobs.map((j) => `<a class="li" href="#/jobs/${j.id}"><div class="grow"><b>${esc(j.title)}</b><span class="s">${fWhen(j.scheduled_at)}</span></div>${statusPill.job(j.status)}</a>`), 'No jobs yet.')}
       ${sec('Calls', d.calls.map((k) => `<a class="li" href="#/calls/${k.id}"><div class="grow"><b>${esc(k.service || 'Call')}</b><span class="s">${fWhen(k.created_at)}</span></div></a>`), 'No calls.')}</div>
-      <div class="stack">${can('email.use') ? `<div class="card" id="custEmails"><div class="ch"><h2>Emails</h2></div><div class="empty">Loading…</div></div>` : ''}${!can('money.manage') ? '' : sec('Quotes', d.quotes.map((q) => `<a class="li" href="#/quotes/${q.id}"><div class="grow"><b>${esc(q.number)} · ${esc(q.title || '')}</b><span class="s">${fDate(q.created_at)}</span></div><b>${money0(q.total)}</b>${statusPill.quote(q)}</a>`), 'No quotes.')}
-      ${!can('money.manage') ? '' : sec('Invoices', d.invoices.map((i) => `<a class="li" href="#/invoices/${i.id}"><div class="grow"><b>${esc(i.number)}</b><span class="s">Due ${fDate(i.due_date)}</span></div><b>${money0(i.total)}</b>${statusPill.invoice(i)}</a>`), 'No invoices.')}</div></div>`);
+      <div class="stack">${can('email.use') ? `<div class="card" id="custEmails"><div class="ch"><h2>Emails</h2></div><div class="empty">Loading…</div></div>` : ''}${!can('money.manage') ? '' : sec(`Quotes${d.quotes.length > 5 ? ` <a class="small" style="font-weight:600" href="#/quotes?customer_id=${c.id}">See all ${d.quotes.length}</a>` : ''}`, d.quotes.slice(0, 5).map((q) => `<a class="li" href="#/quotes/${q.id}"><div class="grow"><b>${esc(q.number)} · ${esc(q.title || '')}</b><span class="s">${fDate(q.created_at)}</span></div><b>${money0(q.total)}</b>${statusPill.quote(q)}</a>`), 'No quotes.')}
+      ${!can('money.manage') ? '' : sec(`Invoices${d.invoices.length > 5 ? ` <a class="small" style="font-weight:600" href="#/invoices?customer_id=${c.id}">See all ${d.invoices.length}</a>` : ''}`, d.invoices.slice(0, 5).map((i) => `<a class="li" href="#/invoices/${i.id}"><div class="grow"><b>${esc(i.number)}</b><span class="s">Due ${fDate(i.due_date)}</span></div><b>${money0(i.total)}</b>${statusPill.invoice(i)}</a>`), 'No invoices.')}</div></div>`);
   if (can('email.use')) loadCustomerEmails(c);
 }
 
@@ -446,40 +625,6 @@ async function toggleTask(id) { if (await act(() => api('POST', `/api/tasks/${id
 async function delTask(id) { if (confirm('Delete this task?') && await act(() => api('DELETE', `/api/tasks/${id}`), 'Task deleted')) { closeLayer(); route(); } }
 
 /* ---------- Quotes ---------- */
-async function pQuotes(id) {
-  shell('quotes', 'Money / <b>Quotes</b>');
-  if (id) return docEditor('quote', id);
-  const list = await act(() => api('GET', '/api/quotes')); if (!list || gone('quotes')) return;
-  S.counts.quotes = list.filter((q) => q.status === 'draft').length;
-  shell('quotes', 'Money / <b>Quotes</b>');
-  const open = list.filter((q) => q.status === 'sent');
-  setContent(head('Quotes', 'Quotes', 'The AI drafts them from calls. You check the price and send.', `<button class="btn primary" onclick="newQuote()">${svg('plus', 16)}New quote</button>`) +
-    `<div class="grid g4" style="margin-bottom:16px">${stat('To check and send', S.counts.quotes, 'drafts', 'doc', 'apricot')}${stat('Waiting for customer', open.length, money0(open.reduce((a, q) => a + Number(q.total), 0)), 'clock', 'slate')}${stat('Accepted', list.filter((q) => q.status === 'accepted').length, money0(list.filter((q) => q.status === 'accepted').reduce((a, q) => a + Number(q.total), 0)), 'check', 'green')}${stat('Win rate', (() => { const done = list.filter((q) => ['accepted', 'declined'].includes(q.status)); return done.length ? Math.round(done.filter((q) => q.status === 'accepted').length / done.length * 100) + '%' : '—'; })(), 'accepted of decided', 'spark', 'green')}</div>
-    <div class="card"><div class="tscroll">${list.length ? `<table class="tbl"><thead><tr><th>Number</th><th>Customer</th><th class="hide-m">Work</th><th class="hide-m">Date</th><th>Status</th><th class="num">Total</th></tr></thead><tbody>
-    ${list.map((q) => `<tr class="click" onclick="go('#/quotes/${q.id}')"><td><b>${esc(q.number)}</b></td><td>${esc(q.customer_name || '—')}</td><td class="hide-m muted">${esc(q.title)}</td><td class="hide-m">${fDate(q.created_at)}</td><td>${statusPill.quote(q)}</td><td class="num"><b>${moneyFmt(q.total)}</b></td></tr>`).join('')}</tbody></table>` : '<div class="empty">No quotes yet. They appear here when a caller asks for a price, or create one yourself.</div>'}</div></div>`);
-}
-async function newQuote(customerId) {
-  const r = await act(() => api('POST', '/api/quotes', { customer_id: customerId || null }));
-  if (r) go(`#/quotes/${r.id}`);
-}
-
-/* ---------- Invoices ---------- */
-async function pInvoices(id, qs) {
-  shell('invoices', 'Money / <b>Invoices</b>');
-  if (id) return docEditor('invoice', id);
-  const list = await act(() => api('GET', '/api/invoices')); if (!list || gone('invoices')) return;
-  const f = (qs && qs.get('f')) || 'all';
-  const unpaid = list.filter((i) => i.status === 'sent'); const od = unpaid.filter((i) => i.overdue);
-  const paidWeek = list.filter((i) => i.status === 'paid' && new Date(i.paid_at) > Date.now() - 7 * 864e5);
-  const sum = (a) => a.reduce((x, i) => x + Number(i.total), 0);
-  const filt = { all: list.filter((i) => i.status !== 'void'), draft: list.filter((i) => i.status === 'draft'), unpaid, overdue: od, paid: list.filter((i) => i.status === 'paid') }[f] || list;
-  setContent(head('Money', 'Invoices', 'Created when a job is finished. Unpaid invoices get friendly reminders automatically.', `<div class="btns"><a class="btn line" href="/api/export/invoices.csv">${svg('dl', 16)}Export for accountant</a><button class="btn primary" onclick="newInvoice()">${svg('plus', 16)}New invoice</button></div>`) +
-    `<div class="grid g4" style="margin-bottom:16px">${stat('Waiting to be paid', money0(sum(unpaid)), `${unpaid.length} invoices`, 'clock', 'apricot', '#/invoices?f=unpaid')}${stat('Overdue', money0(sum(od)), `${od.length} past due date`, 'alert', 'red', '#/invoices?f=overdue')}${stat('Paid in the last 7 days', money0(sum(paidWeek)), `${paidWeek.length} invoices`, 'check', 'green', '#/invoices?f=paid')}${stat('Drafts to send', list.filter((i) => i.status === 'draft').length, 'from finished jobs', 'doc', 'slate', '#/invoices?f=draft')}</div>
-    <div class="row between wrap" style="margin-bottom:12px"><div class="tabs">${[['all', 'All'], ['draft', 'Drafts'], ['unpaid', 'Unpaid'], ['overdue', 'Overdue'], ['paid', 'Paid']].map((t) => `<a href="#/invoices?f=${t[0]}" class="${f === t[0] ? 'on' : ''}">${t[1]}</a>`).join('')}</div></div>
-    <div class="card"><div class="tscroll">${filt.length ? `<table class="tbl"><thead><tr><th>Number</th><th>Customer</th><th class="hide-m">Job</th><th class="hide-m">Due</th><th>Status</th><th class="num">Total</th></tr></thead><tbody>
-    ${filt.map((i) => `<tr class="click" onclick="go('#/invoices/${i.id}')"><td><b>${esc(i.number)}</b></td><td>${esc(i.customer_name || '—')}</td><td class="hide-m muted">${esc(i.job_title || '')}</td><td class="hide-m">${fDate(i.due_date)}</td><td>${statusPill.invoice(i)}</td><td class="num"><b>${moneyFmt(i.total)}</b></td></tr>`).join('')}</tbody></table>` : '<div class="empty">No invoices here.</div>'}</div></div>`);
-}
-async function newInvoice() { const r = await act(() => api('POST', '/api/invoices', {})); if (r) go(`#/invoices/${r.id}`); }
 
 /* ---------- Quote / invoice editor ---------- */
 async function docEditor(type, id) {
@@ -598,8 +743,13 @@ function printDoc() {
 
 /* ---------- Jobs ---------- */
 function weekStart(offset) { const p = partsIn(new Date()); const wd = (new Date(Date.UTC(p.y, p.m - 1, p.d)).getUTCDay() + 6) % 7; return dayStart(-wd + offset * 7); }
-async function pJobs(id) {
+async function pJobs(id, qs) {
   shell('jobs', 'Workspace / <b>Jobs</b>');
+  if (jobsView() === 'list') {
+    await listMount('jobs', qs, head('Jobs and calendar', 'All jobs', 'Every job in one list. Filter by worker, status and type.', `<div class="btns">${viewToggle('list')}<button class="btn primary" onclick="openJobForm({})">${svg('plus', 16)}New job</button></div>`));
+    if (id && !gone('jobs')) openJob(id);
+    return;
+  }
   const ws = weekStart(S.week); const we = weekStart(S.week + 1);
   const jobs = await act(() => api('GET', `/api/jobs?from=${ws.toISOString()}&to=${we.toISOString()}`)); if (!jobs || gone('jobs')) return;
   const scheduled = jobs.filter((j) => j.scheduled_at); const unscheduled = jobs.filter((j) => !j.scheduled_at);
@@ -608,7 +758,7 @@ async function pJobs(id) {
   const card = (j) => `<a class="jc ${j.status === 'done' ? 'done' : ''}" style="border-left-color:${j.assignee_color || '#8A938F'}${j.tentative ? ';border-style:dashed;background:var(--apricot-soft)' : ''}" href="#/jobs/${j.id}"><span class="t">${j.scheduled_at ? fTime(j.scheduled_at) : 'No time'} · ${j.tentative ? 'Requested by AI' : { scheduled: 'Scheduled', on_the_way: 'On the way', in_progress: 'Working', done: 'Done' }[j.status]}</span><b>${esc(j.title)}</b><span>${esc(j.customer_name || '')}</span><span>${esc(j.assignee || 'Unassigned')}${Number(j.price) ? ' · ' + money0(j.price) : ''}${j.invoice_status === 'paid' ? ' · Paid' : ''}</span></a>`;
   const rangeTxt = `${fmt(days[0], { month: 'short', day: 'numeric' })} – ${fmt(days[6], { month: 'short', day: 'numeric' })}`;
   let h = head('Jobs and calendar', S.week === 0 ? 'This week' : S.week === 1 ? 'Next week' : S.week === -1 ? 'Last week' : 'Week', `${rangeTxt} · ${scheduled.length} jobs · ${scheduled.filter((j) => j.status === 'done').length} done`,
-    `<div class="btns"><button class="btn line" onclick="S.week--;pJobs()" aria-label="Previous week">${svg('back', 16)}</button><button class="btn line" onclick="S.week=0;pJobs()">Today</button><button class="btn line" onclick="S.week++;pJobs()" aria-label="Next week" style="transform:scaleX(-1)">${svg('back', 16)}</button><button class="btn primary" onclick="openJobForm({})">${svg('plus', 16)}New job</button></div>`);
+    `<div class="btns">${viewToggle('board')}<button class="btn line" onclick="S.week--;pJobs()" aria-label="Previous week">${svg('back', 16)}</button><button class="btn line" onclick="S.week=0;pJobs()">Today</button><button class="btn line" onclick="S.week++;pJobs()" aria-label="Next week" style="transform:scaleX(-1)">${svg('back', 16)}</button><button class="btn primary" onclick="openJobForm({})">${svg('plus', 16)}New job</button></div>`);
   h += `<div class="row between wrap" style="margin-bottom:12px"><div class="legend">${team.map((t) => `<span><i style="background:${t.color}"></i>${esc(t.name || t.email)}${t.role === 'owner' ? ' (you)' : ''}</span>`).join('')}</div>${team.length < 2 ? '<a href="#/settings/team" class="small">Invite your crew</a>' : ''}</div>`;
   if (unscheduled.length) h += `<div class="card cb" style="margin-bottom:12px"><b>Not scheduled yet</b><div class="grid g4" style="margin-top:8px">${unscheduled.map(card).join('')}</div></div>`;
   if (window.innerWidth > 760) {
@@ -861,10 +1011,11 @@ async function pSettings(tab, qs) {
     h += `<div class="grid g2"><div class="card"><div class="ch"><div><h2>Your team</h2><p>Crew members see only their own jobs, without prices.</p></div></div>
       ${S.me.team.map((t) => `<div class="li"><span class="av" style="background:${t.color};color:#fff">${esc(initials(t.name || t.email))}</span><div class="grow"><b>${esc(t.name || t.email)}${t.id === S.me.user.id ? ' (you)' : ''}</b><span class="s">${esc(roleLabel(t.role))}${t.trade_role ? ' · ' + esc(t.trade_role) : ''}${t.active ? '' : ' · removed'}</span></div>${t.id !== S.me.user.id && rankOf(t.role) <= rankOf(S.me.user.role) ? `<button class="btn line sm" onclick='editMember(${JSON.stringify(t).replace(/'/g, '&#39;')})'>Edit</button>` : ''}</div>`).join('')}</div>
       <div class="card cb stack"><b>Invite someone</b><form class="form" onsubmit="invite(event)"><div class="field"><label for="in">Name</label><input class="input" id="in" placeholder="Carlos Méndez"></div>
+        <div class="field"><label for="iem">Their email</label><input class="input" id="iem" type="email" required autocomplete="off" placeholder="carlos@gmail.com"><span class="hint">The link only works for this address.</span></div>
         <div class="field"><label for="iro">Access</label><select class="input" id="iro">${assignableRoles().map((r) => `<option value="${r.key}" ${r.key === 'worker' ? 'selected' : ''}>${esc(r.label)}</option>`).join('')}</select></div>
         <div class="field"><label for="ir">Job title</label><input class="input" id="ir" placeholder="Plumber"></div><button class="btn primary">${svg('plus', 16)}Create invite link</button></form><div id="inviteOut"></div>
       <div class="stack small">${(S.me.roles || []).map((r) => `<div><b>${esc(r.label)}:</b> <span class="muted">${esc(ROLE_HELP[r.key] || '')}</span></div>`).join('')}</div>
-      ${explain('Send the link by text or WhatsApp. They log in on their phone and see their jobs right away. Tip: add the app to the home screen.')}</div></div>`;
+      ${explain('Send the link by text or WhatsApp. They sign in with the email address you entered and see their jobs right away. Tip: add the app to the home screen.')}</div></div>`;
   }
   if (tab === 'messages') {
     const box = await act(() => api('GET', '/api/outbox')) || [];
@@ -900,8 +1051,8 @@ async function rotateSecret() { if (await act(() => api('POST', '/api/business/r
 async function connectStripe() { const r = await act(() => api('POST', '/api/stripe/connect')); if (r) location.href = r.url; }
 async function invite(e) {
   e.preventDefault();
-  const r = await act(() => api('POST', '/api/invites', { name: val('in'), trade_role: val('ir'), role: val('iro') })); if (!r) return;
-  $('#inviteOut').innerHTML = `<div class="field"><span class="lab">INVITE LINK (works once)</span><div class="code">${esc(r.url)}</div></div><div class="btns"><button class="btn soft sm" onclick="navigator.clipboard.writeText('${r.url}').then(()=>toast('Link copied'))">${svg('copy', 14)}Copy link</button><a class="btn line sm" href="sms:?&body=${encodeURIComponent('Join our team on Unbusyness: ' + r.url)}">Send by text</a></div>`;
+  const r = await act(() => api('POST', '/api/invites', { name: val('in'), email: val('iem'), trade_role: val('ir'), role: val('iro') })); if (!r) return;
+  $('#inviteOut').innerHTML = `<div class="field"><span class="lab">INVITE LINK (works once, only for ${esc(r.email)})</span><div class="code">${esc(r.url)}</div></div><div class="btns"><button class="btn soft sm" onclick="navigator.clipboard.writeText('${r.url}').then(()=>toast('Link copied'))">${svg('copy', 14)}Copy link</button><a class="btn line sm" href="sms:?&body=${encodeURIComponent('Join our team on Unbusyness: ' + r.url)}">Send by text</a></div>`;
 }
 const ROLE_HELP = { owner: 'Everything, including money, settings and integrations.', manager: 'Team, customers, calls, jobs, tasks and the calendar. No prices or invoices.', worker: 'Only their own jobs, tasks and schedule. No prices.' };
 const RANK = { owner: 3, manager: 2, worker: 1 };
