@@ -27,3 +27,6 @@ DEV_LOGIN = "1"
 [userenv.production]
 DEV_LOGIN = "0"
 NODE_ENV = "production"
+
+[nix]
+channel = "stable-25_05"
