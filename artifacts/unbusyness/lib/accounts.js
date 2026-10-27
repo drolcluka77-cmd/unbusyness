@@ -5,7 +5,8 @@
 const crypto = require('crypto');
 const db = require('./db');
 const { acceptInvite } = require('./invites');
-const { fail, redirect } = require('./http');
+const { fail, redirect, setCookie } = require('./http');
+const deletion = require('./deletion');
 const { startUserSession, ensureSession, saveSessionData, originOf, rid } = require('./auth');
 const { sendSystemEmail, layout } = require('./mailer');
 const { PROVIDERS } = require('./integrations/oauth');
@@ -173,6 +174,25 @@ function routes(router) {
     if (phone && !/^\+?[\d\s().-]{6,}$/.test(phone)) fail(400, 'Please enter a valid phone number, e.g. +1 312 555 0100');
     await db.query('UPDATE users SET name=$2, phone=$3 WHERE id=$1', [req.user.id, name, phone || '']);
     return { ok: true };
+  });
+  // Delete my account (required by the App Store; also a GDPR right)
+  router.get('/api/auth/account/delete-plan', async (req) => {
+    if (!req.user) fail(401, 'Please log in');
+    return { ...(await deletion.plan(req.user.id)), password: !!req.user.password_hash };
+  });
+  router.post('/api/auth/account/delete', async (req, res, ctx) => {
+    if (!req.user) fail(401, 'Please log in');
+    const keys = [`delete:${req.user.id}`];
+    if (limited(keys)) fail(429, 'Too many attempts. Please wait 15 minutes.');
+    if (req.user.password_hash) {
+      if (!checkPassword(String(ctx.body.password || ''), req.user.password_hash)) { failed(keys); fail(401, 'The password is not correct'); }
+    } else if (String(ctx.body.confirm || '').trim().toUpperCase() !== 'DELETE') fail(400, 'Type DELETE to confirm');
+    let out;
+    try { out = await deletion.deleteUser(req.user.id); } catch (e) { if (e.status) fail(e.status, e.message); throw e; }
+    // Keep a note for the Unbusyness team without personal data
+    await db.query("INSERT INTO admin_audit(admin_user_id, admin_email, action, details) VALUES(NULL, '', 'self.delete', $1)", [{ user_id: req.user.id, companies_deleted: out.companies }]);
+    setCookie(res, 'ub_sid', '', { maxAge: 0 });
+    return { ok: true, companies: out.companies };
   });
   router.post('/api/auth/password', async (req, res, ctx) => {
     if (!req.user) fail(401, 'Please log in');

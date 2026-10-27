@@ -216,6 +216,13 @@ function routes(router) {
   });
 
   // Price list
+  // Read a price list from a photo, PDF, Excel or CSV. Returns items to check; nothing is saved here.
+  router.post('/api/services/import', async (req, res, ctx) => {
+    need(req, 'company.settings');
+    try {
+      return await require('./pricelist').importFile({ filename: ctx.body.filename, mime: ctx.body.mime, dataBase64: ctx.body.data }, await biz(req));
+    } catch (e) { if (e.status) fail(e.status, e.message); throw e; }
+  });
   router.put('/api/services', async (req, res, ctx) => {
     need(req, 'company.settings');
     const list = (Array.isArray(ctx.body.services) ? ctx.body.services : []).slice(0, 200);
@@ -264,7 +271,7 @@ function routes(router) {
   router.get('/api/today', async (req, res, ctx) => {
     need(req, 'calls.manage');
     const id = req.user.business_id;
-    const [calls, tasks, draftQuotes, draftInvoices, acceptedQuotes, jobsToday, money1, recent, week, requested] = await Promise.all([
+    const [calls, tasks, draftQuotes, draftInvoices, acceptedQuotes, jobsToday, money1, recent, week, requested, nextJob, ai24] = await Promise.all([
       db.many("SELECT id, customer_name, from_phone, intent, service, urgency, summary, created_at FROM calls WHERE business_id=$1 AND status='new' ORDER BY (urgency IN ('emergency','high')) DESC, created_at DESC LIMIT 20", [id]),
       db.many('SELECT t.*, c.name AS customer_name, c.phone AS customer_phone, u.name AS assignee FROM tasks t LEFT JOIN customers c ON c.id=t.customer_id LEFT JOIN users u ON u.id=t.assigned_user_id WHERE t.business_id=$1 AND t.done_at IS NULL ORDER BY t.due_at NULLS LAST, t.id LIMIT 30', [id]),
       db.many("SELECT q.id, q.number, q.title, q.total, c.name AS customer_name FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id WHERE q.business_id=$1 AND q.status='draft' ORDER BY q.id DESC", [id]),
@@ -274,14 +281,22 @@ function routes(router) {
                WHERE j.business_id=$1 AND j.scheduled_at >= $2::timestamptz AND j.scheduled_at < $3::timestamptz ORDER BY j.scheduled_at`, [id, ctx.query.get('from') || new Date(Date.now() - 12 * 3600e3).toISOString(), ctx.query.get('to') || new Date(Date.now() + 12 * 3600e3).toISOString()]),
       db.one(`SELECT COALESCE(SUM(total) FILTER (WHERE status='sent'),0)::float AS unpaid, COUNT(*) FILTER (WHERE status='sent')::int AS unpaid_n,
                COALESCE(SUM(total) FILTER (WHERE status='sent' AND due_date < CURRENT_DATE),0)::float AS overdue, COUNT(*) FILTER (WHERE status='sent' AND due_date < CURRENT_DATE)::int AS overdue_n,
-               COALESCE(SUM(total) FILTER (WHERE status='paid' AND paid_at > now() - interval '7 days'),0)::float AS paid_week
+               COALESCE(SUM(total) FILTER (WHERE status='paid' AND paid_at > now() - interval '7 days'),0)::float AS paid_week,
+               COUNT(*) FILTER (WHERE status='paid' AND paid_at > now() - interval '7 days')::int AS paid_week_n
                FROM invoices WHERE business_id=$1`, [id]),
       db.many('SELECT * FROM activity WHERE business_id=$1 ORDER BY created_at DESC LIMIT 12', [id]),
       db.one(`SELECT COUNT(*)::int AS total, COUNT(*) FILTER (WHERE status='done')::int AS done FROM jobs WHERE business_id=$1 AND scheduled_at > now() - interval '7 days' AND scheduled_at < now() + interval '7 days'`, [id]),
       db.many('SELECT j.id, j.title, j.scheduled_at, c.name AS customer_name FROM jobs j LEFT JOIN customers c ON c.id=j.customer_id WHERE j.business_id=$1 AND j.tentative ORDER BY j.scheduled_at', [id]),
+      // The next job that is not done yet (for the phone view's "Next job" card)
+      db.one(`SELECT j.id, j.title, j.kind, j.status, j.scheduled_at, j.address, j.assigned_user_id, c.name AS customer_name, c.phone AS customer_phone, c.address AS customer_address, u.name AS assignee
+        FROM jobs j LEFT JOIN customers c ON c.id=j.customer_id LEFT JOIN users u ON u.id=j.assigned_user_id
+        WHERE j.business_id=$1 AND NOT j.tentative AND j.status<>'done' AND j.scheduled_at >= now() - interval '3 hours' ORDER BY j.scheduled_at LIMIT 1`, [id]),
+      db.one(`SELECT (SELECT COUNT(*)::int FROM calls WHERE business_id=$1 AND created_at > now() - interval '24 hours') AS calls,
+        (SELECT COUNT(*)::int FROM quotes WHERE business_id=$1 AND ai_drafted AND created_at > now() - interval '24 hours') AS quotes,
+        (SELECT COUNT(*)::int FROM jobs WHERE business_id=$1 AND tentative AND created_at > now() - interval '24 hours') AS bookings`, [id]),
     ]);
-    if (!can(req, 'money.manage')) return { calls, tasks, draftQuotes: [], draftInvoices: [], acceptedQuotes: [], jobsToday: jobsToday.map(({ price, ...j }) => j), money: null, recent: recent.filter((a) => !['paid', 'invoice', 'quote'].includes(a.kind)), week, requested };
-    return { calls, tasks, draftQuotes, draftInvoices, acceptedQuotes, jobsToday, money: money1, recent, week, requested };
+    if (!can(req, 'money.manage')) return { calls, tasks, draftQuotes: [], draftInvoices: [], acceptedQuotes: [], jobsToday: jobsToday.map(({ price, ...j }) => j), money: null, recent: recent.filter((a) => !['paid', 'invoice', 'quote'].includes(a.kind)), week, requested, nextJob, ai24: { ...ai24, quotes: 0 } };
+    return { calls, tasks, draftQuotes, draftInvoices, acceptedQuotes, jobsToday, money: money1, recent, week, requested, nextJob, ai24 };
   });
 
   // Calls

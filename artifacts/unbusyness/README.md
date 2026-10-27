@@ -76,6 +76,17 @@ Pri Googlu in Microsoftu dodaj **oba** redirect naslova, enega za prijavo in ene
 - **Član ostane, kar je:** če povezavo odpre nekdo, ki je že v podjetju, se mu vloga ne spremeni.
 - **Test:** `node scripts/src/verify-unbusyness-invites.mjs`.
 
+### Brisanje računov in podjetij
+- **Uporabnik:** Account → **Delete my account**. Zahteva geslo (ali vpis DELETE pri prijavi z Googlom/Microsoftom).
+- **Edini lastnik:** če so v podjetju še drugi ljudje, mora najprej nekoga narediti za lastnika. Podjetja, kjer je bil edini član, se izbrišejo skupaj z računom.
+- **Admin:** v konzoli izbriše osebo (vpis emaila) ali celo podjetje (vpis imena podjetja). Vse se zapiše v Change log.
+- **Ob brisanju podjetja** se prekliče tudi dostop do Google/Microsoft.
+
+### Uvoz cenika (Settings › Price list)
+- **Excel (.xlsx) in CSV** se preberejo brez AI. Prepozna stolpce za storitev, ceno, enoto in ključne besede (v angleščini ali slovenščini).
+- **Slike in PDF** prebere AI (potreben je `ANTHROPIC_API_KEY`).
+- **Pred shranjevanjem** lastnik vse preveri in nato klikne Save.
+
 ### Konzola za ekipo Unbusyness (`#/admin`)
 - **Dostop:** samo naslovi v skrivnosti `PLATFORM_ADMINS` (ločeni z vejico, npr. `drolcluka77@gmail.com`), in samo če je email potrjen. V aplikaciji nihče ne more postati admin.
 - **Kaj vidiš:** vsa podjetja in ljudi, aktivnost, podjetja brez lastnika, odprta vabila, stanje integracij.

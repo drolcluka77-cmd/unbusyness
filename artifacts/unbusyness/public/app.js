@@ -131,7 +131,7 @@ function shell(page, crumb, content) {
   const b = S.me.business; const u = S.me.user;
   const cnt = { calls: S.counts.calls, quotes: S.counts.quotes };
   const link = (n) => `<a href="#/${n[0]}" class="${page === n[0] ? 'on' : ''}" aria-current="${page === n[0] ? 'page' : 'false'}">${svg(n[2])}${n[1]}${cnt[n[0]] ? `<span class="cnt ${n[0] === 'calls' ? 'hot' : ''}">${cnt[n[0]]}</span>` : ''}</a>`;
-  const tab = (k, label, ic, c) => `<a href="#/${k}" class="${page === k || (k === 'more' && ['customers', 'quotes', 'settings', 'more'].includes(page)) ? 'on' : ''}">${svg(ic, 20)}${label}${c ? `<span class="cnt">${c}</span>` : ''}</a>`;
+  const tab = (k, label, ic, c) => `<a href="#/${k}" class="${page === k || (k === 'invoices' && page === 'quotes') ? 'on' : ''}" aria-current="${page === k ? 'page' : 'false'}">${svg(ic, 21)}${label}${c ? `<span class="cnt">${c}</span>` : ''}</a>`;
   $('#root').innerHTML = `<div class="app">
   <aside class="side"><div class="brand">${LOGO}unbusyness</div>
     <div class="ws"><span class="av">${b.logo_mime ? `<img src="/logo/${b.id}" alt="">` : esc(initials(b.name))}</span><div style="min-width:0;flex:1"><b>${esc(b.name)}</b><small>${esc(b.trade || 'Business')}</small></div></div>
@@ -140,9 +140,10 @@ function shell(page, crumb, content) {
     ${NAV.some((n) => n[3] === 2 && navOk(n)) ? `<div><div class="navlabel">${can('money.manage') ? 'MONEY' : 'COMPANY'}</div><nav class="nav">${NAV.filter((n) => n[3] === 2 && navOk(n)).map(link).join('')}</nav></div>` : ''}
     <div class="sidefoot"><a class="ws" href="#/account" style="text-decoration:none;color:inherit" title="Your account"><span class="av" style="background:var(--apricot-soft);color:var(--apricot-ink)">${esc(initials(u.name))}</span><div style="min-width:0"><b>${esc(u.name || u.email)}</b><small>${esc(roleLabel(u.role))} · Account</small></div></a>${S.me.admin ? `<a class="btn line sm" href="#/admin">${svg('gear', 14)}Team console</a>` : ''}<a class="btn line sm" href="/api/logout">${svg('out', 14)}Log out</a></div>
   </aside>
-  <div class="main"><header class="top"><div class="crumb">${crumb}</div><div class="topr"><button class="btn primary sm" onclick="openJobForm({})">${svg('plus', 14)}<span class="hide-m">New job</span></button></div></header>
+  <div class="main"><header class="top"><div class="crumb">${crumb}</div><div class="mtitle">${page === 'today' ? esc(b.name) : String(crumb).match(/<b>(.*?)<\/b>/) ? crumb.match(/<b>(.*?)<\/b>/)[1] : crumb}</div><div class="topr"><button class="btn primary sm deskonly" onclick="openJobForm({})">${svg('plus', 14)}New job</button>
+      <a class="mavatar ${page === 'more' || page === 'account' ? 'on' : ''}" href="#/more" aria-label="Menu: customers, quotes, settings, account">${esc(initials(u.name || u.email))}${can('money.manage') && cnt.quotes ? `<span class="cnt">${cnt.quotes}</span>` : ''}</a></div></header>
     <main class="content" id="content">${verifyBanner()}${content || '<div class="empty">Loading…</div>'}</main></div></div>
-  <nav class="tabbar" aria-label="Main">${tab('today', 'Today', 'tree')}${tab('calls', 'Calls', 'phone', cnt.calls)}${tab('jobs', 'Jobs', 'cal')}${can('money.manage') ? tab('invoices', 'Money', 'euro') : tab('tasks', 'Tasks', 'check')}${tab('more', 'More', 'more', can('money.manage') ? cnt.quotes : 0)}</nav>`;
+  <nav class="tabbar" aria-label="Main">${tab('today', 'Today', 'tree')}${tab('calls', 'Calls', 'phone', cnt.calls)}<button class="orb" onclick="quickSheet()" aria-label="Create: job, quote, customer, task">${svg('plus', 28)}</button>${tab('jobs', 'Jobs', 'cal')}${can('money.manage') ? tab('invoices', 'Money', 'euro') : tab('tasks', 'Tasks', 'check')}</nav>`;
 }
 const setContent = (h) => { const c = $('#content'); if (c) c.innerHTML = verifyBanner() + h; };
 const head = (eb, title, sub, right = '') => `<div class="head"><div><div class="eyebrow">${eb}</div><h1>${title}</h1>${sub ? `<p>${sub}</p>` : ''}</div>${right}</div>`;
@@ -150,7 +151,7 @@ const stat = (l, n, s, ic, tone = 'green', href) => `<${href ? `a href="${href}"
 
 /* ---------- login + setup ---------- */
 /* ---------- Unbusyness accounts: log in, sign up, forgot / reset password ---------- */
-const NOTICES = { verified: 'Your email is confirmed. Thank you!', 'verify-expired': 'That confirmation link has expired. Log in and ask for a new one.', linked: 'Login method connected.' };
+const NOTICES = { deleted: 'Your account was deleted. Thank you for trying Unbusyness.', verified: 'Your email is confirmed. Thank you!', 'verify-expired': 'That confirmation link has expired. Log in and ask for a new one.', linked: 'Login method connected.' };
 async function pLogin(qs, mode) {
   const m = S.me || {}; mode = mode || qs.get('mode') || 'login';
   if (!S.authCfg) { try { S.authCfg = await api('GET', '/api/auth/config'); } catch { S.authCfg = {}; } }
@@ -219,7 +220,8 @@ async function pAccount(qs) {
       <div class="card cb stack"><b>Ways to log in</b>
         <div class="li" style="padding:10px 0"><span class="ic sand">${svg('user')}</span><div class="grow"><b>Email and password</b><span class="s">${a.password ? 'Set' : 'Not set'}</span></div></div>
         ${['google', 'microsoft'].filter((p) => a[p] || has(p)).map((p) => `<div class="li" style="padding:10px 0"><span class="ic sand">${svg('link')}</span><div class="grow"><b>${p === 'google' ? 'Google' : 'Microsoft'}</b><span class="s">${has(p) ? 'Connected' : 'Not connected'}</span></div>${has(p) ? (a.identities.some((i) => i.provider === p) ? `<button class="btn line sm" onclick="removeIdentity('${p}')">Remove</button>` : '') : `<a class="btn line sm" href="/api/auth/oauth/${p}/start?link=1">Connect</a>`}</div>`).join('')}
-        <a class="btn line" href="/api/logout">${svg('out', 16)}Log out</a></div></div>`;
+        <a class="btn line" href="/api/logout">${svg('out', 16)}Log out</a></div></div>
+    <div class="card cb stack" style="margin-top:16px;border-color:#F0C9C4"><b>Delete account</b><p class="muted" style="margin:0">Removes your account and your logins for good. You will be asked to confirm.</p><button class="btn danger" style="justify-self:start" onclick="deleteAccount()">${svg('trash', 16)}Delete my account</button></div>`;
   if (manages()) shell('account', 'Your <b>account</b>', body); else phoneShell('Account', body, '#/my');
 }
 async function saveAccount(e) { e.preventDefault(); if (await act(() => api('PUT', '/api/auth/account', { name: val('an'), phone: val('aph') }), 'Saved')) { await refreshMe(); route(); } }
@@ -261,6 +263,7 @@ async function pToday() {
   if (!d || gone('today')) return;
   S.counts = { calls: d.calls.length, quotes: d.draftQuotes.length };
   shell('today', 'Workspace / <b>Today</b>');
+  if (isPhone()) return setContent(mToday(d));
   const u = S.me.user; const hr = partsIn(new Date()).h;
   const T = (dot, b, s, href) => `<a class="task" href="${href}"><span class="dot ${dot}"></span><div><b>${esc(b)}</b><span>${esc(s)}</span></div></a>`;
   const urgent = d.calls.filter((c) => ['emergency', 'high'].includes(c.urgency) || c.intent === 'emergency').length;
@@ -417,15 +420,24 @@ const listActive = (page) => { const st = S.list[page]; const d = LISTS[page].de
 async function listMount(page, qs, frame) {
   S.list[page] = listState(page, qs);
   if (LISTS[page].prepare) { await LISTS[page].prepare(); if (gone(LISTS[page].route || page)) return; }
-  setContent(frame + `<div id="lvstats"></div><div class="lvbar" id="lvbar" role="search"></div><div class="card"><div class="tscroll" id="lvbody"><div class="empty">Loading…</div></div><div id="lvpager"></div></div>`);
+  setContent(`<div class="lvframe">${frame}</div>` + `<div id="lvstats"></div><div class="lvbar" id="lvbar" role="search"></div><div class="card"><div class="tscroll" id="lvbody"><div class="empty">Loading…</div></div><div id="lvpager"></div></div>`);
   drawListBar(page); syncListUrl(page);
   return listLoad(page);
 }
 function drawListBar(page) {
   const bar = $('#lvbar'); if (!bar) return;
   const st = S.list[page];
-  bar.innerHTML = LISTS[page].bar(st) + (st.period === 'custom' ? `<span class="lvdates"><input class="input" type="date" aria-label="From" value="${attr(st.from || '')}" onchange="setList('${page}',{from:this.value})"><span class="muted">–</span><input class="input" type="date" aria-label="To" value="${attr(st.to || '')}" onchange="setList('${page}',{to:this.value})"></span>` : '') +
-    (listActive(page) ? `<button class="btn line sm" onclick="clearList('${page}')">${svg('x', 14)}Clear filters</button>` : '');
+  const cfg = LISTS[page];
+  bar.innerHTML = cfg.bar(st) + (isPhone() && cfg.sortLabels ? `<div class="lvrow lvsort"><select class="input" aria-label="Sort" onchange="const [k,d]=this.value.split(':');setList('${page}',{sort:k,dir:d})">${cfg.sortLabels.map(([k, d, t]) => `<option value="${k}:${d}" ${st.sort === k && st.dir === d ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></div>` : '') + (st.period === 'custom' ? `<span class="lvdates"><input class="input" type="date" aria-label="From" value="${attr(st.from || '')}" onchange="setList('${page}',{from:this.value})"><span class="muted">–</span><input class="input" type="date" aria-label="To" value="${attr(st.to || '')}" onchange="setList('${page}',{to:this.value})"></span>` : '') +
+    (listActive(page) ? `<button class="btn line sm lvclear" onclick="clearList('${page}')">${svg('x', 14)}Clear filters</button>` : '');
+  // Phone: filters fold away behind one button, so the list starts near the top
+  if (isPhone()) {
+    S.lvOpen = S.lvOpen || {};
+    const n = ['customer_id', 'period', 'min', 'max', 'assignee', 'kind'].filter((k) => (st[k] || '') !== (cfg.defs[k] || '')).length + (page === 'jobs' && st.status !== cfg.defs.status ? 1 : 0);
+    bar.classList.toggle('mcollapse', !S.lvOpen[page]);
+    const row = $('#lvq');
+    if (row) row.insertAdjacentHTML('afterend', `<button class="btn line lvtoggle ${n ? 'has' : ''}" onclick="S.lvOpen['${page}']=!S.lvOpen['${page}'];drawListBar('${page}')" aria-expanded="${!!S.lvOpen[page]}">${svg('search', 16)}${S.lvOpen[page] ? 'Hide' : 'Filters'}${n ? ` <span class="tabn">${n}</span>` : ''}</button>`);
+  }
 }
 async function listLoad(page) {
   const cfg = LISTS[page]; const st = S.list[page]; const seq = ++S.listSeq; const nav = S.nav;
@@ -435,7 +447,7 @@ async function listLoad(page) {
   if (r.total && r.page > r.pages) { st.page = r.pages; syncListUrl(page); return listLoad(page); }
   if (cfg.stats) $('#lvstats').innerHTML = cfg.stats(r, st);
   const b = $('#lvbody'); b.classList.remove('loading');
-  b.innerHTML = r.rows.length ? cfg.table(r, st) : `<div class="empty">${listActive(page) ? 'Nothing matches these filters.' : cfg.empty}</div>`;
+  b.innerHTML = r.rows.length ? (isPhone() && cfg.card ? `<div class="mlist">${r.rows.map((x) => cfg.card(x, st)).join('')}</div>` : cfg.table(r, st)) : `<div class="empty">${listActive(page) ? 'Nothing matches these filters.' : cfg.empty}</div>`;
   $('#lvpager').innerHTML = pager(page, r, cfg.summary ? cfg.summary(r) : '');
   if (cfg.after) cfg.after(r, st);
 }
@@ -476,6 +488,8 @@ LISTS.customers = {
   empty: 'No customers yet. They are added automatically when someone calls, or add one yourself.',
   bar: (st) => `<div id="lvtabs">${lvTabs('customers', 'f', st.f, [['all', 'All'], ['owes', 'Owes money'], ['overdue', 'Overdue'], ['open_quote', 'Open quote'], ['upcoming', 'Upcoming job']])}</div><div class="lvrow">${lvSearch('customers', st, 'Search name, phone, email, address…')}</div>`,
   after: (r, st) => { const t = $('#lvtabs'); if (t) t.innerHTML = lvTabs('customers', 'f', st.f, [['all', 'All', r.counts.all], ['owes', 'Owes money', r.counts.owes], ['overdue', 'Overdue', r.counts.overdue], ['open_quote', 'Open quote', r.counts.open_quote], ['upcoming', 'Upcoming job', r.counts.upcoming]]); },
+  sortLabels: [['last', 'desc', 'Recent activity first'], ['name', 'asc', 'Name A–Z'], ['balance', 'desc', 'Owes the most'], ['jobs', 'desc', 'Most jobs']],
+  card: (c) => `<a class="mrow" href="#/customers/${c.id}"><span class="ic sand">${esc(initials(c.name))}</span><div class="grow"><b>${esc(c.name)}</b><span>${esc([c.phone, c.address].filter(Boolean).join(' · ') || c.email || '')}</span>${c.open_quotes || c.next_job ? `<span>${c.open_quotes ? `${c.open_quotes} open quote${c.open_quotes > 1 ? 's' : ''}` : ''}${c.open_quotes && c.next_job ? ' · ' : ''}${c.next_job ? 'Next job ' + fDay(c.next_job) : ''}</span>` : ''}</div>${c.balance ? `<b class="mamt" style="color:var(--apricot-ink)">${money0(c.balance)}</b>` : ''}</a>`,
   table: (r, st) => `<table class="tbl"><thead><tr>${sortTh('customers', st, 'name', 'Name')}<th class="hide-m">Phone</th><th class="hide-m">Address</th>${sortTh('customers', st, 'last', 'Last activity', 'hide-m')}${sortTh('customers', st, 'jobs', 'Jobs', 'num')}${sortTh('customers', st, 'balance', 'Balance', 'num')}</tr></thead><tbody>
     ${r.rows.map((c) => `<tr class="click" onclick="go('#/customers/${c.id}')"><td><b>${esc(c.name)}</b><div class="muted small">${esc(c.email || '')}${c.open_quotes ? ` · <span style="color:var(--slate,#4F5F80)">${c.open_quotes} open quote${c.open_quotes > 1 ? 's' : ''}</span>` : ''}${c.next_job ? ` · Next job ${fDay(c.next_job)}` : ''}</div></td><td class="hide-m">${esc(c.phone)}</td><td class="hide-m muted">${esc(c.address)}</td><td class="hide-m muted">${c.last_activity ? ago(c.last_activity) : '—'}</td><td class="num">${c.jobs}</td><td class="num">${c.balance ? `<b style="color:var(--apricot-ink)">${money0(c.balance)}</b>` : '<span class="muted">—</span>'}</td></tr>`).join('')}</tbody></table>`,
 };
@@ -495,6 +509,8 @@ LISTS.quotes = {
   bar: (st) => lvTabs('quotes', 'status', st.status, [['', 'All'], ['draft', 'Drafts'], ['sent', 'Sent'], ['viewed', 'Viewed'], ['expired', 'Expired'], ['accepted', 'Accepted'], ['declined', 'Declined']]) +
     `<div class="lvrow">${lvSearch('quotes', st, 'Search number, work, customer…')}${lvSelect('quotes', 'customer_id', st.customer_id, customerOpts(), 'Customer')}${lvSelect('quotes', 'period', st.period, PERIODS_MONEY, 'Date')}</div>`,
   summary: (r) => `${moneyFmt(r.sum)} total`,
+  sortLabels: [['number', 'desc', 'Newest first'], ['number', 'asc', 'Oldest first'], ['total', 'desc', 'Biggest first'], ['customer', 'asc', 'Customer A–Z']],
+  card: (q) => `<a class="mrow" href="#/quotes/${q.id}"><span class="ic ${q.status === 'accepted' ? 'green' : q.status === 'draft' ? 'apricot' : 'slate'}">${svg(q.status === 'accepted' ? 'check' : 'doc', 18)}</span><div class="grow"><b>${esc(q.customer_name || 'No customer')} · ${money0(q.total)}</b><span>${esc(q.title || q.number)} · ${fDate(q.created_at)}</span></div>${statusPill.quote(q)}</a>`,
   table: (r, st) => `<table class="tbl"><thead><tr>${sortTh('quotes', st, 'number', 'Number')}${sortTh('quotes', st, 'customer', 'Customer')}<th class="hide-m">Work</th>${sortTh('quotes', st, 'date', 'Date', 'hide-m')}<th class="hide-m">Valid until</th>${sortTh('quotes', st, 'status', 'Status')}${sortTh('quotes', st, 'total', 'Total', 'num')}</tr></thead><tbody>
     ${r.rows.map((q) => `<tr class="click" onclick="go('#/quotes/${q.id}')"><td><b>${esc(q.number)}</b></td><td>${esc(q.customer_name || '—')}</td><td class="hide-m muted">${esc(q.title)}</td><td class="hide-m">${fDate(q.created_at)}</td><td class="hide-m ${q.expired ? '' : 'muted'}" ${q.expired ? 'style="color:var(--red)"' : ''}>${fDate(q.valid_until)}</td><td>${statusPill.quote(q)}</td><td class="num"><b>${moneyFmt(q.total)}</b></td></tr>`).join('')}</tbody></table>`,
 };
@@ -522,6 +538,9 @@ LISTS.invoices = {
     <span class="lvdates" title="Amount"><input class="input lvnum" type="number" min="0" step="1" inputmode="decimal" placeholder="Min ${cur()}" aria-label="Minimum amount" value="${attr(st.min || '')}" onchange="setList('invoices',{min:this.value})"><span class="muted">–</span><input class="input lvnum" type="number" min="0" step="1" inputmode="decimal" placeholder="Max" aria-label="Maximum amount" value="${attr(st.max || '')}" onchange="setList('invoices',{max:this.value})"></span></div>`,
   summary: (r) => `${moneyFmt(r.sum)} total`,
   after: (r, st) => { const a = $('#invExport'); if (a) a.href = `/api/export/invoices.csv?${apiQuery('invoices', st, true)}`; },
+  sortLabels: [['number', 'desc', 'Newest first'], ['due', 'asc', 'Due soonest'], ['total', 'desc', 'Biggest first'], ['customer', 'asc', 'Customer A–Z']],
+  card: (i) => { const od = i.overdue || (i.status === 'sent' && i.due_date && dParse(i.due_date) < dayStart());
+    return `<a class="mrow" href="#/invoices/${i.id}"><span class="ic ${i.status === 'paid' ? 'green' : od ? 'red' : i.status === 'draft' ? 'apricot' : 'slate'}">${svg(i.status === 'paid' ? 'check' : od ? 'alert' : i.status === 'draft' ? 'doc' : 'clock', 18)}</span><div class="grow"><b>${esc(i.customer_name || 'No customer')} · ${money0(i.total)}</b><span>${esc([i.job_title, i.number].filter(Boolean).join(' · '))}</span><span>${i.status === 'paid' ? 'Paid ' + fDate(i.paid_at) : i.status === 'draft' ? 'Not sent yet' : `Due ${fDate(i.due_date)}`}</span></div>${statusPill.invoice(i)}</a>`; },
   table: (r, st) => `<table class="tbl"><thead><tr>${sortTh('invoices', st, 'number', 'Number')}${sortTh('invoices', st, 'customer', 'Customer')}<th class="hide-m">Job</th>${sortTh('invoices', st, 'issued', 'Issued', 'hide-m')}${sortTh('invoices', st, 'due', 'Due', 'hide-m')}${sortTh('invoices', st, 'status', 'Status')}${sortTh('invoices', st, 'total', 'Total', 'num')}</tr></thead><tbody>
     ${r.rows.map((i) => `<tr class="click" onclick="go('#/invoices/${i.id}')"><td><b>${esc(i.number)}</b></td><td>${esc(i.customer_name || '—')}</td><td class="hide-m muted">${esc(i.job_title || '')}</td><td class="hide-m">${fDate(i.issue_date)}</td><td class="hide-m">${fDate(i.due_date)}</td><td>${statusPill.invoice(i)}</td><td class="num"><b>${moneyFmt(i.total)}</b></td></tr>`).join('')}</tbody></table>`,
 };
@@ -542,6 +561,8 @@ LISTS.jobs = {
     ${lvSelect('jobs', 'kind', st.kind, [['', 'All types'], ...Object.entries(KIND)], 'Type')}
     ${lvSelect('jobs', 'period', st.period, PERIODS_JOBS, 'When')}</div>`,
   summary: (r) => (r.sum !== undefined && can('money.manage') ? `${money0(r.sum)} of work` : ''),
+  sortLabels: [['when', 'asc', 'Soonest first'], ['when', 'desc', 'Latest first'], ['customer', 'asc', 'Customer A–Z'], ['assignee', 'asc', 'By worker']],
+  card: (j) => `<a class="mrow" href="#/jobs/${j.id}" style="border-left:4px solid ${j.assignee_color || '#8A938F'}"><span class="mtimebox">${j.scheduled_at ? `${esc(fmt(j.scheduled_at, { weekday: 'short', day: 'numeric' }))}<small>${esc(fTime(j.scheduled_at))}</small>` : 'No time'}</span><div class="grow"><b>${esc(j.title)}</b><span>${esc([j.customer_name, j.address].filter(Boolean).join(' · '))}</span><span>${esc(j.assignee || 'Unassigned')} · ${esc(KIND[j.kind] || 'Job')}</span></div>${j.tentative ? pill('AI', 'apricot') : statusPill.job(j.status)}</a>`,
   table: (r, st) => { const money = can('money.manage');
     return `<table class="tbl"><thead><tr>${sortTh('jobs', st, 'when', 'When')}${sortTh('jobs', st, 'title', 'Job')}${sortTh('jobs', st, 'customer', 'Customer', 'hide-m')}${sortTh('jobs', st, 'assignee', 'Who')}${sortTh('jobs', st, 'status', 'Status')}${money ? sortTh('jobs', st, 'price', 'Price', 'num hide-m') : ''}</tr></thead><tbody>
     ${r.rows.map((j) => `<tr class="click" onclick="go('#/jobs/${j.id}')"><td style="white-space:nowrap">${j.scheduled_at ? `<b>${fDay(j.scheduled_at)}</b><div class="muted small">${fTime(j.scheduled_at)}</div>` : '<span class="muted">Not scheduled</span>'}</td><td><b>${esc(j.title)}</b><div class="muted small">${esc(KIND[j.kind] || 'Job')}${j.photo_count ? ` · ${j.photo_count} photo${j.photo_count > 1 ? 's' : ''}` : ''}${money && j.invoice_status ? ` · Invoice ${esc(j.invoice_status)}` : ''}</div></td><td class="hide-m">${esc(j.customer_name || '—')}<div class="muted small">${esc(j.address || '')}</div></td><td><span class="who"><i style="background:${j.assignee_color || '#8A938F'}"></i>${esc(j.assignee || 'Unassigned')}</span></td><td>${j.tentative ? pill('Requested by AI', 'apricot') : statusPill.job(j.status)}</td>${money ? `<td class="num hide-m">${Number(j.price) ? money0(j.price) : '<span class="muted">—</span>'}</td>` : ''}</tr>`).join('')}</tbody></table>`; },
@@ -773,6 +794,7 @@ async function pJobs(id, qs) {
   let h = head('Jobs and calendar', S.week === 0 ? 'This week' : S.week === 1 ? 'Next week' : S.week === -1 ? 'Last week' : 'Week', `${rangeTxt} · ${scheduled.length} jobs · ${scheduled.filter((j) => j.status === 'done').length} done`,
     `<div class="btns">${viewToggle('board')}<button class="btn line" onclick="S.week--;pJobs()" aria-label="Previous week">${svg('back', 16)}</button><button class="btn line" onclick="S.week=0;pJobs()">Today</button><button class="btn line" onclick="S.week++;pJobs()" aria-label="Next week" style="transform:scaleX(-1)">${svg('back', 16)}</button><button class="btn primary" onclick="openJobForm({})">${svg('plus', 16)}New job</button></div>`);
   h += `<div class="row between wrap" style="margin-bottom:12px"><div class="legend">${team.map((t) => `<span><i style="background:${t.color}"></i>${esc(t.name || t.email)}${t.role === 'owner' ? ' (you)' : ''}</span>`).join('')}</div>${team.length < 2 ? '<a href="#/settings/team" class="small">Invite your crew</a>' : ''}</div>`;
+  if (isPhone()) { setContent(mWeek(h, days, scheduled, unscheduled)); if (id) openJob(id); return; }
   if (unscheduled.length) h += `<div class="card cb" style="margin-bottom:12px"><b>Not scheduled yet</b><div class="grid g4" style="margin-top:8px">${unscheduled.map(card).join('')}</div></div>`;
   if (window.innerWidth > 760) {
     h += `<div class="tscroll"><div class="board">${days.map((d) => { const js = scheduled.filter((j) => dateKey(j.scheduled_at) === dateKey(d)); return `<div class="col ${isToday(d) ? 'today' : ''}"><div class="dh"><b>${fmt(d, { weekday: 'short', day: 'numeric' })}</b><span>${js.length ? money0(js.reduce((a, j) => a + Number(j.price || 0), 0)) : ''}</span></div>${js.map(card).join('') || '<span class="muted small" style="padding:4px">No jobs</span>'}</div>`; }).join('')}</div></div>`;
@@ -930,7 +952,7 @@ async function pWorkerJob(id) {
 
 /* ---------- More (mobile) ---------- */
 function pMore() {
-  shell('more', 'Workspace / <b>More</b>', `<div class="card">${[['tasks', 'Tasks', 'check', 'tasks.manage'], ['customers', 'Customers', 'user', 'customers.manage'], ['quotes', 'Quotes', 'doc', 'money.manage'], ['settings', 'Settings', 'gear', 'settings']].filter((x) => navOk([0, 0, 0, 0, x[3]])).map((x) => `<a class="li" href="#/${x[0]}"><span class="ic sand">${svg(x[2])}</span><div class="grow"><b>${x[1]}</b></div>${x[0] === 'quotes' && S.counts.quotes ? pill(S.counts.quotes + ' to send', 'apricot') : ''}</a>`).join('')}<a class="li" href="#/account"><span class="ic sand">${svg('user')}</span><div class="grow"><b>Account</b></div></a><a class="li" href="/api/logout"><span class="ic sand">${svg('out')}</span><div class="grow"><b>Log out</b></div></a></div>`);
+  shell('more', 'Workspace / <b>Menu</b>', `<div class="card">${[['tasks', 'Tasks', 'check', 'tasks.manage'], ['customers', 'Customers', 'user', 'customers.manage'], ['quotes', 'Quotes', 'doc', 'money.manage'], ['invoices', 'Invoices', 'euro', 'money.manage'], ['settings', 'Settings', 'gear', 'settings']].filter((x) => navOk([0, 0, 0, 0, x[3]])).map((x) => `<a class="li" href="#/${x[0]}"><span class="ic sand">${svg(x[2])}</span><div class="grow"><b>${x[1]}</b></div>${x[0] === 'quotes' && S.counts.quotes ? pill(S.counts.quotes + ' to send', 'apricot') : ''}</a>`).join('')}<a class="li" href="#/account"><span class="ic sand">${svg('user')}</span><div class="grow"><b>Account</b><span class="s">${esc(S.me.user.email)}</span></div></a>${S.me.admin ? `<a class="li" href="#/admin"><span class="ic sand">${svg('gear')}</span><div class="grow"><b>Team console</b></div></a>` : ''}<a class="li" href="/api/logout"><span class="ic sand">${svg('out')}</span><div class="grow"><b>Log out</b></div></a></div>`);
 }
 
 /* ---------- Settings ---------- */
@@ -961,7 +983,9 @@ async function pSettings(tab, qs) {
   if (tab === 'prices') {
     store.set('ub_prices_seen', '1');
     window._prices = S.me.services.map((s) => ({ ...s }));
-    h += `<div class="card"><div class="ch"><div><h2>Price list</h2><p>The AI only uses these prices when it drafts a quote. Keywords help it match what callers say.</p></div><button class="btn primary" onclick="savePrices()">${svg('check', 16)}Save</button></div><div class="tscroll" id="priceBox"></div></div>`;
+    h += `<div class="card cb row wrap" style="margin-bottom:12px;gap:14px"><span class="ic sand">${svg('dl', 18)}</span><div class="grow" style="min-width:220px"><b>Import your price list</b><div class="muted small">Upload a photo, a PDF, an Excel file (.xlsx) or a CSV. ${S.me.ai ? 'The AI reads photos and PDFs.' : 'Photos and PDFs need the AI to be switched on; Excel and CSV always work.'} You check everything before it is saved.</div></div>
+      <label class="btn line" for="plFile">${svg('cam', 16)}Choose file</label><input id="plFile" type="file" accept="image/*,.pdf,.xlsx,.csv,.tsv,.txt,application/pdf,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" hidden onchange="importPrices(this)"></div>
+      <div class="card"><div class="ch"><div><h2>Price list</h2><p>The AI only uses these prices when it drafts a quote. Keywords help it match what callers say.</p></div><button class="btn primary" onclick="savePrices()">${svg('check', 16)}Save</button></div><div class="tscroll" id="priceBox"></div></div>`;
   }
   if (tab === 'voice') {
     const v = await act(() => api('GET', '/api/voice/settings'));
@@ -1142,8 +1166,10 @@ async function pAdmin(sub, id, qs) {
 function auditRows(rows) {
   const what = (a) => { const x = a.details || {}; const b = x.before || {}; const n = x.after || {};
     return ({ 'membership.update': `${b.role !== n.role ? `Role ${admRole(b.role)} → ${admRole(n.role)}` : ''}${b.active !== n.active ? `${b.role !== n.role ? ', ' : ''}${n.active ? 'restored' : 'removed from company'}` : ''}` || 'No change',
-      'membership.add': `Added as ${admRole(n.role)}`, 'invite.revoke': `Invite for ${x.email || '—'} cancelled`, 'user.block': 'Account blocked', 'user.unblock': 'Account unblocked' })[a.action] || a.action; };
-  return rows.length ? rows.map((a) => `<div class="li"><div class="grow"><b>${esc(what(a))}</b><span class="s">${a.target_email ? esc(a.target_email) + ' · ' : ''}${a.business_name ? `<a href="#/admin/company/${a.business_id}">${esc(a.business_name)}</a> · ` : ''}by ${esc(a.admin_email)} · ${ago(a.created_at)}${a.details && a.details.reason ? ' · “' + esc(a.details.reason) + '”' : ''}</span></div></div>`).join('') : '<div class="empty">No changes yet.</div>';
+      'membership.add': `Added as ${admRole(n.role)}`, 'invite.revoke': `Invite for ${x.email || '—'} cancelled`, 'user.block': 'Account blocked', 'user.unblock': 'Account unblocked',
+      'user.delete': `Account deleted: ${x.email || ''}${(x.companies_deleted || []).length ? ' (with ' + x.companies_deleted.join(', ') + ')' : ''}`, 'company.delete': `Company deleted: ${x.company || ''}`,
+      'self.delete': `Someone deleted their own account${(x.companies_deleted || []).length ? ' and ' + x.companies_deleted.join(', ') : ''}` })[a.action] || a.action; };
+  return rows.length ? rows.map((a) => `<div class="li"><div class="grow"><b>${esc(what(a))}</b><span class="s">${a.target_email ? esc(a.target_email) + ' · ' : ''}${a.business_name ? `<a href="#/admin/company/${a.business_id}">${esc(a.business_name)}</a> · ` : ''}${a.admin_email ? 'by ' + esc(a.admin_email) : 'by the person themselves'} · ${ago(a.created_at)}${a.details && a.details.reason ? ' · “' + esc(a.details.reason) + '”' : ''}</span></div></div>`).join('') : '<div class="empty">No changes yet.</div>';
 }
 
 LISTS.admin_companies = {
@@ -1163,7 +1189,7 @@ async function admCompany(id) {
   const b = d.company; const c = d.counts; S.admCompany = d;
   const owners = d.members.filter((m) => m.role === 'owner' && m.active).length;
   setContent(`<a href="#/admin/companies" class="btn line sm" style="margin-bottom:14px">${svg('back', 14)}All companies</a>` +
-    head('Company', esc(b.name), esc([b.trade, b.email, b.phone].filter(Boolean).join(' · ')) + ` · created ${fDate(b.created_at)}`) +
+    head('Company', esc(b.name), esc([b.trade, b.email, b.phone].filter(Boolean).join(' · ')) + ` · created ${fDate(b.created_at)}`, `<button class="btn danger" onclick="admDeleteCompany(${b.id})">${svg('trash', 16)}Delete company</button>`) +
     (owners ? '' : `<div class="explain" style="margin-bottom:16px"><span class="ei">!</span><div><b>No active owner.</b> Nobody can see money or settings. Give someone the owner role below.</div></div>`) +
     `<div class="grid g4" style="margin-bottom:16px">${stat('Customers', c.customers, `${c.calls} calls`, 'user', 'slate')}${stat('Jobs', c.jobs, `${c.quotes} quotes`, 'cal', 'green')}${stat('Paid', money0(c.paid_total), `${c.invoices} invoices`, 'check', 'green')}${stat('Waiting to be paid', money0(c.unpaid_total), 'sent invoices', 'clock', 'apricot')}</div>
     <div class="grid g2"><div class="stack">
@@ -1209,7 +1235,7 @@ LISTS.admin_users = {
     ${r.rows.map((u) => `<tr><td><b>${esc(u.email || '—')}</b>${u.admin ? ' ' + pill('Our team', 'slate') : ''}<div class="muted small">${esc(u.name || '')}${u.verified || u.login !== 'email' ? '' : ' · email not confirmed'}</div></td>
       <td>${u.companies.length ? u.companies.map((c) => `<a href="#/admin/company/${c.business_id}" class="small" style="display:block">${esc(c.name)} · ${admRole(c.role)}${c.active ? '' : ' (removed)'}</a>`).join('') : '<span class="muted small">No company</span>'}</td>
       <td class="hide-m muted">${esc({ email: 'Email', google: 'Google', microsoft: 'Microsoft', replit: 'Replit', dev: 'Demo' }[u.login] || u.login)}</td><td class="hide-m muted">${u.last_login_at ? ago(u.last_login_at) : '—'}</td><td class="hide-m muted">${fDate(u.created_at)}</td>
-      <td class="num">${u.id === S.me.user.id ? '' : u.active ? `<button class="btn line sm" onclick="admBlock(${u.id},false,'${attr(u.email)}')">Block</button>` : `<button class="btn soft sm" onclick="admBlock(${u.id},true,'${attr(u.email)}')">Unblock</button>`}</td></tr>`).join('')}</tbody></table>`,
+      <td class="num"><div class="btns" style="justify-content:flex-end;flex-wrap:nowrap">${u.id === S.me.user.id ? '' : (u.active ? `<button class="btn line sm" onclick="admBlock(${u.id},false,'${attr(u.email)}')">Block</button>` : `<button class="btn soft sm" onclick="admBlock(${u.id},true,'${attr(u.email)}')">Unblock</button>`) + `<button class="btn line sm" onclick="admDeleteUser(${u.id})" aria-label="Delete ${attr(u.email)}">${svg('trash', 14)}</button>`}</div></td></tr>`).join('')}</tbody></table>`,
 };
 async function admUsers(qs) {
   adminShell('users');
@@ -1239,3 +1265,146 @@ async function admSystem() {
 }
 async function admTestEmail() { const r = await act(() => api('POST', '/api/admin/system/test-email'), 'Test email sent'); if (r) toast(`Test email sent to ${r.to}`); }
 async function admResolve(id) { if (await act(() => api('POST', `/api/admin/errors/${id}/resolve`))) admSystem(); }
+
+/* ---------- Price list import ---------- */
+const fileToBase64 = (f) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(String(r.result).split(',')[1] || ''); r.onerror = () => rej(new Error('Could not read the file')); r.readAsDataURL(f); });
+async function importPrices(inp) {
+  const f = inp.files && inp.files[0]; inp.value = ''; if (!f) return;
+  const isImg = /^image\//.test(f.type);
+  if (!isImg && f.size > 8 * 1024 * 1024) return toast('The file is larger than 8 MB.', true);
+  modal('Reading your price list', `<div class="empty" style="padding:30px 10px">${svg('spark', 22)}<div style="margin-top:10px"><b>${esc(f.name)}</b></div><div class="muted small">${isImg || /pdf$/i.test(f.name) ? 'The AI is reading it. This can take up to a minute.' : 'Reading the spreadsheet…'}</div></div>`);
+  let data; let mime = f.type;
+  try { if (isImg) { data = (await resizeImage(f, 2200)).split(',')[1]; mime = 'image/jpeg'; } else data = await fileToBase64(f); } catch (e) { closeLayer(); return toast(e.message, true); }
+  let r; try { r = await api('POST', '/api/services/import', { filename: f.name, mime, data }); } catch (e) { closeLayer(); return toast(e.message, true, 9000); }
+  window._import = r.items.map((i) => ({ ...i, on: true }));
+  drawImport(r.via);
+}
+function drawImport(via) {
+  const it = window._import; const existing = new Set((window._prices || []).map((p) => String(p.name).trim().toLowerCase()));
+  modal(`Found ${it.length} service${it.length === 1 ? '' : 's'}`, `<p class="muted" style="margin:0 0 10px">${via && via.includes('ai') || via === 'photo' || via === 'pdf' ? 'Read by the AI. Check names and prices, the AI can make mistakes.' : 'Check the names and prices.'} Untick anything you do not want.</p>
+    <div class="tscroll" style="max-height:52vh"><table class="tbl items"><thead><tr><th style="width:28px"></th><th>Service</th><th class="u">Unit</th><th class="num">Price</th></tr></thead><tbody>
+    ${it.map((s, k) => `<tr><td><input type="checkbox" ${s.on ? 'checked' : ''} onchange="window._import[${k}].on=this.checked" aria-label="Include ${attr(s.name)}"></td><td><input class="input" value="${attr(s.name)}" oninput="window._import[${k}].name=this.value" aria-label="Service name">${existing.has(s.name.trim().toLowerCase()) ? '<div class="muted small">Already in your list: the price will be updated</div>' : ''}</td><td class="u"><input class="input u" value="${attr(s.unit)}" oninput="window._import[${k}].unit=this.value" aria-label="Unit"></td><td class="num"><input class="input p" type="number" step="0.01" value="${s.price}" oninput="window._import[${k}].price=this.value" aria-label="Price"></td></tr>`).join('')}</tbody></table></div>
+    <div class="btns" style="margin-top:14px"><button class="btn primary" onclick="applyImport(false)">${svg('plus', 16)}Add to my price list</button><button class="btn line" onclick="if(confirm('Replace your whole price list with these services?'))applyImport(true)">Replace my price list</button><button class="btn line" onclick="closeLayer()">Cancel</button></div>`, true);
+}
+function applyImport(replace) {
+  const chosen = window._import.filter((i) => i.on && String(i.name).trim());
+  if (!chosen.length) return toast('Nothing is ticked', true);
+  let list = replace ? [] : (window._prices || []).slice();
+  for (const c of chosen) {
+    const hit = list.find((p) => String(p.name).trim().toLowerCase() === String(c.name).trim().toLowerCase());
+    if (hit) { hit.price = c.price; hit.unit = c.unit || hit.unit; if (!hit.keywords) hit.keywords = c.keywords; }
+    else list.push({ name: c.name, unit: c.unit || 'job', price: c.price, keywords: c.keywords || '' });
+  }
+  window._prices = list; closeLayer(); drawPrices();
+  toast(`${chosen.length} services added. Check them and click Save.`, false, 6000);
+  const b = document.querySelector('[onclick="savePrices()"]'); if (b) b.classList.add('pulse');
+}
+
+/* ---------- Delete my account ---------- */
+async function deleteAccount() {
+  const p = await act(() => api('GET', '/api/auth/account/delete-plan')); if (!p) return;
+  const list = (a) => a.map((b) => `<li><b>${esc(b.name)}</b></li>`).join('');
+  if (p.blockedBy.length) {
+    return modal('First choose a new owner', `<p style="margin-top:0">You are the only owner of these companies, and other people work there:</p><ul>${list(p.blockedBy)}</ul>
+      <p>Make someone else <b>Owner</b> in Settings › Team, then come back. Or ask the Unbusyness team to delete the whole company.</p><div class="btns"><a class="btn primary" href="#/settings/team" onclick="closeLayer()">Open Team settings</a><button class="btn line" onclick="closeLayer()">Close</button></div>`);
+  }
+  modal('Delete your account?', `<div class="stack">
+    <p style="margin:0">This cannot be undone.</p>
+    <ul style="margin:0;padding-left:18px"><li>Your account, logins and sessions are deleted.</li>
+    ${p.deleteWith.length ? `<li><b>These companies are deleted with all their data</b> (customers, calls, jobs, quotes, invoices, photos), because you are the only member:<ul>${list(p.deleteWith)}</ul></li>` : ''}
+    ${p.staysIn.length ? `<li>You leave ${p.staysIn.map((b) => `<b>${esc(b.name)}</b>`).join(', ')}. Your jobs there stay with the company, unassigned.</li>` : ''}</ul>
+    ${p.deleteWith.length ? '<p class="small muted" style="margin:0">Tip: download your invoices first (Invoices › Export for accountant).</p>' : ''}
+    <form class="form" onsubmit="confirmDelete(event, ${p.password})">${p.password ? '<div class="field"><label for="dpw">Your password</label><input class="input" id="dpw" type="password" required autocomplete="current-password"></div>' : '<div class="field"><label for="dcf">Type DELETE to confirm</label><input class="input" id="dcf" required autocomplete="off"></div>'}
+      <div class="btns"><button class="btn danger">${svg('trash', 16)}Delete for good</button><button type="button" class="btn line" onclick="closeLayer()">Cancel</button></div></form></div>`);
+}
+async function confirmDelete(e, pw) {
+  e.preventDefault();
+  const r = await act(() => api('POST', '/api/auth/account/delete', pw ? { password: val('dpw') } : { confirm: val('dcf') })); if (!r) return;
+  closeLayer(); S.me = { user: null }; location.hash = '#/login?notice=deleted'; route();
+}
+
+async function admDeleteCompany(id) {
+  const d = S.admCompany; const b = d.company; const c = d.counts;
+  window._admRun = async () => { if (await act(() => api('POST', `/api/admin/companies/${id}/delete`, { confirm: val('admName'), reason: val('admWhy') }), 'Company deleted')) { closeLayer(); go('#/admin/companies'); } };
+  modal('Delete company', `<form class="form" onsubmit="event.preventDefault();window._admRun()"><p style="margin:0">This deletes <b>${esc(b.name)}</b> and all its data for good: ${c.customers} customers, ${c.jobs} jobs, ${c.quotes} quotes, ${c.invoices} invoices, calls, photos and connections. People keep their accounts, but lose access.</p>
+    <div class="field"><label for="admName">Type the company name to confirm: <b>${esc(b.name)}</b></label><input class="input" id="admName" required autocomplete="off"></div>
+    <div class="field"><label for="admWhy">Why (for the change log)</label><input class="input" id="admWhy" placeholder="e.g. Asked by the owner by email"></div>
+    <div class="btns"><button class="btn danger">${svg('trash', 16)}Delete for good</button><button type="button" class="btn line" onclick="closeLayer()">Cancel</button></div></form>`);
+}
+async function admDeleteUser(id) {
+  const p = await act(() => api('GET', `/api/admin/users/${id}/delete-plan`)); if (!p) return;
+  const names = (a) => a.map((b) => `<b>${esc(b.name)}</b>`).join(', ');
+  if (p.blockedBy.length) return modal('Choose a new owner first', `<p style="margin-top:0"><b>${esc(p.user.email)}</b> is the only owner of ${names(p.blockedBy)}, and other people work there. Make someone else owner on the company page, or delete the company.</p><div class="btns">${p.blockedBy.map((b) => `<a class="btn line" href="#/admin/company/${b.id}" onclick="closeLayer()">Open ${esc(b.name)}</a>`).join('')}</div>`);
+  window._admRun = async () => { if (await act(() => api('POST', `/api/admin/users/${id}/delete`, { confirm: val('admName'), reason: val('admWhy') }), 'Account deleted')) { closeLayer(); listLoad('admin_users'); } };
+  modal('Delete account', `<form class="form" onsubmit="event.preventDefault();window._admRun()"><p style="margin:0">Deletes the account <b>${esc(p.user.email)}</b> and its logins for good.${p.deleteWith.length ? ` <b>These companies are deleted too</b>, because nobody else is in them: ${names(p.deleteWith)}.` : ''}${p.staysIn.length ? ` They leave ${names(p.staysIn)}; their jobs there stay, unassigned.` : ''}</p>
+    <div class="field"><label for="admName">Type the email to confirm: <b>${esc(p.user.email)}</b></label><input class="input" id="admName" required autocomplete="off"></div>
+    <div class="field"><label for="admWhy">Why (for the change log)</label><input class="input" id="admWhy" placeholder="e.g. Asked by email"></div>
+    <div class="btns"><button class="btn danger">${svg('trash', 16)}Delete for good</button><button type="button" class="btn line" onclick="closeLayer()">Cancel</button></div></form>`);
+}
+
+/* ---------- Phone view for owners and managers (same look as the phone demo) ---------- */
+const isPhone = () => window.matchMedia('(max-width: 760px)').matches;
+let _wasPhone = isPhone();
+window.addEventListener('resize', () => { const n = isPhone(); if (_wasPhone !== null && n !== _wasPhone && S.me && S.me.user && manages() && !$('#layer').innerHTML) route(); _wasPhone = n; });
+function sheet(title, body) {
+  layer(`<div class="scrim bottom" onclick="if(event.target===this)closeLayer()"><div class="sheet" role="dialog" aria-label="${attr(title)}"><div class="grab" aria-hidden="true"></div><div class="mh"><h2>${esc(title)}</h2><button class="x" onclick="closeLayer()" aria-label="Close">${svg('x')}</button></div>${body}</div></div>`);
+}
+function quickSheet() {
+  const it = (ic, b, s, on) => `<button class="li" onclick="closeLayer();${on}"><span class="ic sand">${svg(ic)}</span><div class="grow"><b>${b}</b><span class="s">${s}</span></div></button>`;
+  sheet('Create', `<div class="card">${[
+    can('jobs.manage') ? it('cal', 'New job', 'Book work and give it to someone', 'openJobForm({})') : '',
+    can('money.manage') ? it('doc', 'New quote', 'Price a job for a customer', 'newQuote()') : '',
+    can('customers.manage') ? it('user', 'New customer', 'Name, phone and address', 'customerForm()') : '',
+    can('tasks.manage') ? it('check', 'New task', 'A reminder for you or the team', 'taskForm({})') : '',
+    can('calls.manage') ? it('phone', 'Test call', 'See what a call from the AI looks like', 'simulateCall()') : ''].join('')}</div>`);
+}
+function mToday(d) {
+  const u = S.me.user; const hr = partsIn(new Date()).h; const money = !!d.money;
+  const j = d.nextJob; const mine = j && j.assigned_user_id === u.id; const nx = j && NEXT[j.status];
+  const addr = j && (j.address || j.customer_address);
+  const tile = (ic, label, attrs) => `<a class="mtile" ${attrs}>${svg(ic, 20)}<span>${label}</span></a>`;
+  let h = `<div class="mhello"><div class="eyebrow">${esc(fmt(new Date(), { weekday: 'long', day: 'numeric', month: 'long' }))}</div><h1>${hr < 12 ? 'Morning' : hr < 18 ? 'Afternoon' : 'Evening'}, ${esc((first(u.name) && !first(u.name).includes('@') ? first(u.name) : (u.email || '').split('@')[0].replace(/^./, (c) => c.toUpperCase())) || 'there')}</h1></div>`;
+  h += `<div class="mlabel">Next job</div>`;
+  h += j ? `<div class="mhero"><div class="row between"><span class="mtime">${esc(fTime(j.scheduled_at))} · ${isToday(j.scheduled_at) ? 'TODAY' : esc(fmt(j.scheduled_at, { weekday: 'short', month: 'short', day: 'numeric' }).toUpperCase())}</span><span class="mpill">${esc({ scheduled: 'Scheduled', on_the_way: 'On the way', in_progress: 'Working' }[j.status] || j.status)}</span></div>
+      <h2>${esc(j.title)}</h2><div class="msub">${esc([j.customer_name, addr].filter(Boolean).join(' · '))}</div>
+      <div class="mcrew">${svg('team', 15)} ${j.assignee ? 'Crew: ' + esc(j.assignee) + (mine ? ' (you)' : '') : 'Nobody assigned yet'}</div>
+      ${mine && nx ? `<button class="btn apricot lg mbig" onclick="mJobStep(${j.id},'${nx[0]}')">${svg(nx[2], 18)}${nx[1]}</button>` : `<a class="btn apricot lg mbig" href="#/jobs/${j.id}">${j.assignee ? svg('eye', 18) + 'Open job' : svg('team', 18) + 'Choose who does it'}</a>`}
+      <div class="mtiles">${addr ? tile('nav', 'Navigate', `href="${mapHref(addr)}" target="_blank" rel="noopener"`) : ''}${j.customer_phone ? tile('phone', 'Call', `href="${telHref(j.customer_phone)}"`) : ''}${tile('doc', 'Details', `href="#/jobs/${j.id}"`)}${tile('cal', 'Week', 'href="#/jobs"')}</div></div>`
+    : `<div class="mhero"><h2>No jobs coming up</h2><div class="msub">Book one, or let the AI take calls and book them for you.</div><button class="btn apricot lg mbig" onclick="openJobForm({})">${svg('plus', 18)}New job</button></div>`;
+  const a = d.ai24 || {};
+  const did = [a.calls && `answered ${a.calls} call${a.calls === 1 ? '' : 's'}`, a.quotes && `drafted ${a.quotes} quote${a.quotes === 1 ? '' : 's'}`, a.bookings && `booked ${a.bookings} job${a.bookings === 1 ? '' : 's'}`].filter(Boolean);
+  if (did.length) h += `<div class="mwhile"><span class="ic green" style="width:34px;height:34px;background:var(--green);color:var(--apricot-light)">${svg('spark', 16)}</span><div><b>While you worked:</b> the AI ${did.length > 1 ? did.slice(0, -1).join(', ') + ' and ' + did[did.length - 1] : did[0]} in the last 24 hours.</div></div>`;
+  const N = (tone, ic, b, sub, btn) => `<div class="mneed"><span class="ic ${tone}">${svg(ic, 18)}</span><div class="grow"><b>${b}</b><span>${sub}</span></div>${btn}</div>`;
+  const urgent = (c) => ['emergency', 'high'].includes(c.urgency) || c.intent === 'emergency';
+  const needs = [
+    ...d.calls.map((c) => N(urgent(c) ? 'red' : 'slate', urgent(c) ? 'alert' : 'phone', `${c.intent === 'question' || urgent(c) ? 'Call back' : 'Book'} ${esc(c.customer_name || c.from_phone || 'caller')}`, esc([c.service || c.summary, urgent(c) ? 'urgent' : ago(c.created_at)].filter(Boolean).join(' · ')),
+      c.from_phone && (urgent(c) || c.intent === 'question') ? `<a class="btn primary" href="${telHref(c.from_phone)}">Call back</a>` : `<a class="btn soft" href="#/calls/${c.id}">Open</a>`)),
+    ...d.requested.map((r) => N('apricot', 'cal', `Confirm booking · ${esc(r.customer_name || 'caller')}`, `${esc(r.title)} · ${esc(fWhen(r.scheduled_at))}`, `<button class="btn primary" onclick="mConfirm(${r.id})">Confirm</button>`)),
+    ...d.acceptedQuotes.map((q) => N('green', 'check', `Book ${esc(q.customer_name || 'customer')}`, `Accepted ${esc(q.number)}${money ? ' · ' + money0(q.total) : ''}`, `<button class="btn soft" onclick="openJobForm({quote_id:${q.id}})">Book</button>`)),
+    ...d.draftQuotes.map((q) => N('apricot', 'doc', `${esc(q.customer_name || 'Customer')} · ${money0(q.total)}`, esc(q.title || q.number), `<a class="btn soft" href="#/quotes/${q.id}">Review</a>`)),
+    ...d.draftInvoices.map((i) => N('slate', 'euro', `Invoice · ${esc(i.customer_name || 'customer')} · ${money0(i.total)}`, `${esc(i.number)} · ready to send`, `<a class="btn soft" href="#/invoices/${i.id}">Review</a>`)),
+    ...d.tasks.filter((t) => !t.call_id).slice(0, 5).map((t) => N('sand', 'check', esc(t.title), esc([t.assignee, t.customer_name, t.due_at && fWhen(t.due_at)].filter(Boolean).join(' · ') || 'Task'), `<button class="btn soft" onclick="taskDone(${t.id})">Done</button>`)),
+  ];
+  h += `<div class="mlabel row between"><span>Needs you</span>${needs.length ? `<span class="mcount">${needs.length}</span>` : ''}</div>`;
+  h += needs.length ? `<div class="stack">${needs.slice(0, 8).join('')}</div>${needs.length > 8 ? `<p class="muted small" style="text-align:center">${needs.length - 8} more on the computer view and in Calls, Quotes and Tasks.</p>` : ''}` : `<div class="mneed"><span class="ic green">${svg('check', 18)}</span><div class="grow"><b>All clear</b><span>Nothing is waiting for you.</span></div></div>`;
+  if (money) {
+    const m = d.money;
+    h += `<div class="mlabel">Money</div><div class="grid g2m"><a class="mstat" href="#/invoices?status=unpaid"><span>Waiting to be paid</span><b>${money0(m.unpaid)}</b><small>${m.unpaid_n} invoice${m.unpaid_n === 1 ? '' : 's'}${m.overdue_n ? ` · <em>${m.overdue_n} overdue</em>` : ''}</small></a><a class="mstat" href="#/invoices?status=paid"><span>Paid this week</span><b style="color:var(--ok)">${money0(m.paid_week)}</b><small>${m.paid_week_n || 0} invoice${m.paid_week_n === 1 ? '' : 's'}</small></a></div>`;
+  }
+  const rest = d.jobsToday.filter((x) => x.status !== 'done' && (!j || x.id !== j.id));
+  if (rest.length) h += `<div class="mlabel">Later today</div><div class="card">${rest.map((x) => `<a class="li" href="#/jobs/${x.id}"><span class="mtimebox">${esc(fTime(x.scheduled_at))}</span><div class="grow"><b>${esc(x.title)}</b><span class="s">${esc([x.customer_name, x.assignee].filter(Boolean).join(' · '))}</span></div></a>`).join('')}</div>`;
+  h += `<div style="margin-top:18px">${gettingStarted(d)}</div>`;
+  if (d.recent.length) h += `<div class="mlabel">Recent activity</div><div class="card cb" style="padding-top:2px">${d.recent.slice(0, 6).map((r) => `<div class="act"><div><b>${esc(r.text)}</b><time>${ago(r.created_at)}</time></div></div>`).join('')}</div>`;
+  return h;
+}
+async function mJobStep(id, status) { if (await act(() => api('POST', `/api/jobs/${id}/status`, { status }), 'Updated')) route(); }
+async function mConfirm(id) { if (await act(() => api('POST', `/api/jobs/${id}/confirm`), 'Booking confirmed. The customer was told.')) route(); }
+
+// Phone week: a strip of days, then each day's jobs as big rows; jobs without a time are folded away at the end.
+function mWeek(headHtml, days, scheduled, unscheduled) {
+  const row = (j) => `<a class="mrow" href="#/jobs/${j.id}" style="border-left:4px solid ${j.assignee_color || '#8A938F'}${j.tentative ? ';background:var(--apricot-soft);border-style:dashed' : ''}"><span class="mtimebox">${j.scheduled_at ? esc(fTime(j.scheduled_at)) : '—'}</span><div class="grow"><b>${esc(j.title)}</b><span>${esc([j.customer_name, j.address].filter(Boolean).join(' · '))}</span><span>${esc(j.assignee || 'Unassigned')}</span></div>${j.tentative ? pill('Confirm', 'apricot') : statusPill.job(j.status)}</a>`;
+  const strip = `<div class="mdays" role="list">${days.map((d) => { const n = scheduled.filter((j) => dateKey(j.scheduled_at) === dateKey(d)).length; return `<a role="listitem" class="mday ${isToday(d) ? 'on' : ''}" href="javascript:void 0" onclick="const el=document.getElementById('d-${dateKey(d)}');if(el)el.scrollIntoView({behavior:'smooth',block:'start'})"><small>${esc(fmt(d, { weekday: 'short' }))}</small><b>${esc(fmt(d, { day: 'numeric' }))}</b><i>${n || ''}</i></a>`; }).join('')}</div>`;
+  const list = days.map((d) => { const js = scheduled.filter((j) => dateKey(j.scheduled_at) === dateKey(d)); return `<div class="mlabel" id="d-${dateKey(d)}" style="scroll-margin-top:70px">${isToday(d) ? 'Today · ' : ''}${esc(fmt(d, { weekday: 'long', month: 'short', day: 'numeric' }))}</div>${js.length ? `<div class="mlist">${js.map(row).join('')}</div>` : '<div class="muted small" style="padding:0 4px">No jobs</div>'}`; }).join('');
+  const later = unscheduled.length ? `<details class="mfold"><summary>${unscheduled.length} job${unscheduled.length === 1 ? '' : 's'} without a time</summary><div class="mlist" style="margin-top:10px">${unscheduled.map(row).join('')}</div></details>` : '';
+  return `<div class="mweekhead">${headHtml}</div>${strip}${list}${later}`;
+}
