@@ -11,6 +11,7 @@ const JOB_KINDS = Object.keys(calendar.KINDS);
 const { renderDoc, publicPage, DOC_CSS, esc, money, day } = require('./docs');
 const L = require('./lists');
 const invites = require('./invites');
+const notify = require('./notify');
 
 // ---------- helpers ----------
 const biz = (req) => db.one('SELECT * FROM businesses WHERE id=$1', [req.user.business_id]);
@@ -160,7 +161,7 @@ function routes(router) {
       if (!can(req, 'company.settings')) { delete business.voice_secret; delete business.stripe_account; }
     }
     return { user: { id: req.user.id, name: req.user.name, email: req.user.email, role: req.user.role, phone: req.user.phone, verified: !!req.user.email_verified_at || !String(req.user.auth_sub || '').startsWith('email:') }, business, team, services,
-      perms: req.perms, roles: roleList(), memberships: req.memberships.map((m) => ({ business_id: m.business_id, name: m.business_name, role: m.role })), devLogin: DEV_LOGIN, stripe: svc.stripeOn(), ai: !!process.env.ANTHROPIC_API_KEY, email: !!(business && await db.one("SELECT 1 FROM integrations WHERE business_id=$1 AND kind='email' AND status='connected'", [business.id])), sms: !!process.env.TWILIO_ACCOUNT_SID, notice };
+      perms: req.perms, roles: roleList(), memberships: req.memberships.map((m) => ({ business_id: m.business_id, name: m.business_name, role: m.role })), devLogin: DEV_LOGIN, stripe: svc.stripeOn(), ai: !!process.env.ANTHROPIC_API_KEY, email: !!(business && await db.one("SELECT 1 FROM integrations WHERE business_id=$1 AND kind='email' AND status='connected'", [business.id])), sms: !!process.env.TWILIO_ACCOUNT_SID, notice, admin: require('./admin').isPlatformAdmin(req.user) };
   });
 
   router.post('/api/business', async (req, res, ctx) => {
@@ -518,6 +519,7 @@ function routes(router) {
   router.post('/api/jobs', async (req, res, ctx) => {
     need(req, 'jobs.manage');
     const b = ctx.body; const bz = await biz(req);
+    if (b.scheduled_at && isNaN(Date.parse(b.scheduled_at))) fail(400, 'Please pick a valid date and time');
     let customerId = Number(b.customer_id) || null; let address = str(b.address, 400); let title = str(b.title, 200); let price = r2(b.price);
     let quoteId = null; let callId = Number(b.call_id) || null;
     if (b.quote_id) {
@@ -532,6 +534,7 @@ function routes(router) {
     const job = await db.one(`INSERT INTO jobs(business_id, customer_id, quote_id, call_id, title, address, scheduled_at, duration_min, assigned_user_id, price, notes, kind)
       VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12) RETURNING *`, [bz.id, customerId, quoteId, callId, title, address, b.scheduled_at || null, Number(b.duration_min) || 90, assignee ? assignee.id : req.user.id, isOwner(req) ? price : 0, str(b.notes, 4000), JOB_KINDS.includes(b.kind) ? b.kind : 'job']);
     calendar.queue(job.id, originOf(req));
+    notify.notifyWorker(job, 'assigned', { actorId: req.user.id, origin: originOf(req) }); // tells the worker (not awaited)
     if (callId) { await db.query("UPDATE calls SET status='handled' WHERE id=$1", [callId]); await db.query('UPDATE tasks SET done_at=now() WHERE call_id=$1 AND done_at IS NULL', [callId]); }
     const cust = customerId ? await db.one('SELECT * FROM customers WHERE id=$1', [customerId]) : null;
     if (cust && b.notify_customer !== false && job.scheduled_at) {
@@ -560,11 +563,14 @@ function routes(router) {
   router.put('/api/jobs/:id', async (req, res, ctx) => {
     need(req, 'jobs.manage');
     const j = await owned('jobs', ctx.params.id, req.user.business_id); const b = ctx.body;
+    if (b.scheduled_at && isNaN(Date.parse(b.scheduled_at))) fail(400, 'Please pick a valid date and time');
     const assignee = b.assigned_user_id !== undefined ? (b.assigned_user_id ? await member(req.user.business_id, b.assigned_user_id) : null) : undefined;
     await db.query('UPDATE jobs SET title=$2, address=$3, scheduled_at=$4, duration_min=$5, assigned_user_id=$6, price=$7, notes=$8, kind=$9 WHERE id=$1',
       [j.id, str(b.title ?? j.title, 200), str(b.address ?? j.address, 400), b.scheduled_at !== undefined ? (b.scheduled_at || null) : j.scheduled_at, Number(b.duration_min ?? j.duration_min) || 90,
         assignee === undefined ? j.assigned_user_id : (assignee ? assignee.id : null), b.price !== undefined && isOwner(req) ? r2(b.price) : j.price, str(b.notes ?? j.notes, 4000), JOB_KINDS.includes(b.kind) ? b.kind : j.kind]);
     calendar.queue(j.id, originOf(req));
+    const after = await db.one('SELECT * FROM jobs WHERE id=$1', [j.id]);
+    notify.notifyChanges(j, after, { actorId: req.user.id, origin: originOf(req) });
     if (assignee && assignee.id !== j.assigned_user_id) await log(j.business_id, 'job', `${j.title} assigned to ${assignee.name}`, 'job', j.id);
     return { ok: true };
   });
@@ -573,6 +579,7 @@ function routes(router) {
     const j = await owned('jobs', ctx.params.id, req.user.business_id);
     await db.query('UPDATE jobs SET tentative=FALSE WHERE id=$1', [j.id]);
     calendar.queue(j.id, originOf(req));
+    if (j.tentative) notify.notifyWorker({ ...j, tentative: false }, 'assigned', { actorId: req.user.id, origin: originOf(req) });
     const bz = await biz(req);
     const cust = j.customer_id ? await db.one('SELECT * FROM customers WHERE id=$1', [j.customer_id]) : null;
     if (cust && j.scheduled_at) {
@@ -588,6 +595,7 @@ function routes(router) {
     need(req, 'jobs.manage');
     const j = await owned('jobs', ctx.params.id, req.user.business_id);
     await db.query('DELETE FROM jobs WHERE id=$1', [j.id]);
+    if (j.status !== 'done' && (!j.scheduled_at || new Date(j.scheduled_at) > Date.now() - 864e5)) notify.notifyWorker(j, 'cancelled', { actorId: req.user.id, origin: originOf(req) });
     if (j.cal_event_id) calendar.removeEvent(j.business_id, j.cal_event_id, j.cal_provider);
     return { ok: true };
   });

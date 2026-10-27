@@ -121,6 +121,23 @@ Free slots respect the owner's working hours, appointment length, existing jobs 
 - For emergencies (flooding, gas smell, no heat in winter, sparks), use `create_callback` with `urgency: "emergency"`. Give the safety advice from `emergency_policy`.
 - Offer slots from `get_availability`. Use `request_booking` only after the caller agrees. Then say it will be confirmed by text or email.
 
+## End-to-end test (do this once per company, before going live)
+Do it with a phone you can call from, on the published app. Every step is visible in **Settings › Voice agent → Last events** (and in the team console → company → Voice agent).
+
+1. **Connect.** In Retell, set the webhook to the *after every call* URL and add the 5 tools with their URLs (Settings › Voice agent shows all of them). Choose Retell as the provider in Unbusyness and save the Retell API key there (it checks the signature).
+2. **Information call.** Call and ask for opening hours and prices. Expect: `get_business_info` shows OK in the events; the agent answers with the hours and price list from Settings.
+3. **New customer + booking.** Call from an unknown number, describe a leak and ask for tomorrow morning. Expect, in this order:
+   - `lookup_customer` → OK (not found), then `get_availability` → OK with free slots;
+   - `request_booking` → OK. A dashed **"Requested by AI"** job appears on the Jobs board.
+   - After hanging up, the call event arrives: a new call on **Calls** with summary, transcript and a quote draft, and the customer is created.
+4. **Confirm.** Open the requested job → **Confirm booking**. Expect: the customer gets a confirmation (email/SMS). The assigned worker is told by SMS or email; check Today → Recent activity ("… was told by …").
+5. **Existing customer.** Call again from the same number. Expect: `lookup_customer` finds the customer by phone and the agent uses their name.
+6. **Emergency.** Call and say "water is flooding the basement". Expect: the call is marked urgent and the owner is notified, following the emergency rule in Settings.
+7. **Callback.** Ask for someone to call you back. Expect: `create_callback` → OK and a task on **Tasks**.
+8. **Bad signature (safety).** Optional: send any request to the events URL without a signature. Expect: Rejected in the events list, and nothing is created.
+
+If a step shows **Rejected**, the API key or secret does not match. If it shows **Error**, open the line to see the message, or check the team console → System → Errors.
+
 ## Adding a new provider
 
 Add one adapter object in `lib/voice/adapters.js` with five methods:

@@ -163,13 +163,15 @@ function routes(router) {
     if (!req.user) fail(401, 'Please log in');
     const ids = await db.many('SELECT provider, email, created_at FROM user_identities WHERE user_id=$1', [req.user.id]);
     const legacy = String(req.user.auth_sub || '').split(':')[0];
-    return { name: req.user.name, email: req.user.email, verified: !!req.user.email_verified_at, password: !!req.user.password_hash, identities: ids, legacy: ['replit', 'google', 'microsoft'].includes(legacy) ? legacy : null, google: loginConfigured('google'), microsoft: loginConfigured('microsoft') };
+    return { name: req.user.name, phone: req.user.phone || '', email: req.user.email, verified: !!req.user.email_verified_at, password: !!req.user.password_hash, identities: ids, legacy: ['replit', 'google', 'microsoft'].includes(legacy) ? legacy : null, google: loginConfigured('google'), microsoft: loginConfigured('microsoft') };
   });
   router.put('/api/auth/account', async (req, res, ctx) => {
     if (!req.user) fail(401, 'Please log in');
     const name = String(ctx.body.name || '').trim().slice(0, 100);
     if (!name) fail(400, 'Please enter your name');
-    await db.query('UPDATE users SET name=$2 WHERE id=$1', [req.user.id, name]);
+    const phone = ctx.body.phone !== undefined ? String(ctx.body.phone || '').trim().slice(0, 40) : req.user.phone;
+    if (phone && !/^\+?[\d\s().-]{6,}$/.test(phone)) fail(400, 'Please enter a valid phone number, e.g. +1 312 555 0100');
+    await db.query('UPDATE users SET name=$2, phone=$3 WHERE id=$1', [req.user.id, name, phone || '']);
     return { ok: true };
   });
   router.post('/api/auth/password', async (req, res, ctx) => {

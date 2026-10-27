@@ -9,6 +9,8 @@ const api = require('./lib/api');
 const voice = require('./lib/voice');
 const integrations = require('./lib/integrations');
 const accounts = require('./lib/accounts');
+const admin = require('./lib/admin');
+const errors = require('./lib/errors');
 
 const PORT = Number(process.env.PORT || 3000);
 const router = createRouter();
@@ -17,6 +19,7 @@ api.routes(router);
 voice.routes(router, api);
 integrations.routes(router);
 accounts.routes(router);
+admin.routes(router);
 const statics = serveStatic(path.join(__dirname, 'public'));
 
 const server = http.createServer(async (req, res) => {
@@ -40,9 +43,12 @@ const server = http.createServer(async (req, res) => {
     if (res.headersSent) return;
     if (e instanceof HttpError) return json(res, e.status, { error: e.message });
     console.error(req.method, url.pathname, e);
+    errors.report(e, { method: req.method, path: url.pathname, userId: req.user && req.user.id, businessId: req.user && req.user.business_id });
     json(res, 500, { error: 'Something went wrong. Please try again.' });
   }
 });
+
+process.on('unhandledRejection', (e) => { console.error('Unhandled:', e); errors.report(e, { source: 'background' }); });
 
 (async () => {
   try {
@@ -53,7 +59,7 @@ const server = http.createServer(async (req, res) => {
     process.exit(1);
   }
   server.listen(PORT, '0.0.0.0', () => console.log(`Unbusyness is running on port ${PORT}${auth.DEV_LOGIN ? ' (dev login enabled)' : ''}`));
-  const tick = () => api.runReminders().catch((e) => console.error('Reminders failed:', e.message));
+  const tick = () => api.runReminders().then(() => { admin.state.remindersAt = new Date(); }).catch((e) => { console.error('Reminders failed:', e.message); errors.report(e, { source: 'reminders' }); });
   setTimeout(tick, 30e3);
   setInterval(tick, 15 * 60e3);
 })();

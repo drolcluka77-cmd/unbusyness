@@ -54,7 +54,8 @@ function layout({ title, intro, button, url, outro }) {
 async function sendSystemEmail(to, subject, text, html, category = 'other') {
   if (!configured()) {
     logDelivery(category, 'not_configured');
-    if (!isProd()) return 'logged';
+    // Development only: print the email so confirm/reset links can be used without SMTP. Never in production.
+    if (!isProd()) { console.log(`\n[system email → ${to}] ${subject}\n${text}\n`); return 'logged'; }
     return 'not_configured';
   }
   try {
@@ -78,4 +79,7 @@ async function sendSystemEmail(to, subject, text, html, category = 'other') {
   }
 }
 
-module.exports = { sendSystemEmail, layout, configured, isProd };
+// For the team console: is SMTP set up, and does a test message go through? (never returns the password)
+const status = () => { const c = cfg(); return { configured: configured(), host: c.host || '', port: c.port, from: c.from || '' }; };
+
+module.exports = { sendSystemEmail, layout, configured, isProd, status };

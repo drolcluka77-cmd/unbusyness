@@ -57,6 +57,7 @@ async function startUserSession(req, res, userId, data = {}) {
   if (req.session) await db.query('DELETE FROM sessions WHERE id=$1', [req.session.id]);
   const id = rid(32);
   await db.query(`INSERT INTO sessions(id, user_id, data, expires_at) VALUES($1,$2,$3, now() + interval '${SESSION_DAYS} days')`, [id, userId, data]);
+  await db.query('UPDATE users SET last_login_at=now() WHERE id=$1', [userId]);
   setCookie(res, COOKIE, id, { maxAge: SESSION_DAYS * 86400, secure: isSecure(req) });
 }
 
