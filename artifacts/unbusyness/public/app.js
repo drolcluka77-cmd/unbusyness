@@ -106,6 +106,7 @@ function route() {
   if (parts[0] === 'reset') return pLogin(qs, 'reset');
   if (!S.me || !S.me.user) return pLogin(qs);
   if (parts[0] === 'account') return pAccount(qs);
+  if (parts[0] === 'admin') return pAdmin(parts[1], parts[2], qs);
   if (!S.me.business) return pSetup();
   if (!manages()) {
     if (parts[0] === 'job' && parts[1]) return pWorkerJob(parts[1]);
@@ -137,7 +138,7 @@ function shell(page, crumb, content) {
     ${(S.me.memberships || []).length > 1 ? `<select class="input" style="min-height:34px;font-size:12px" aria-label="Switch company" onchange="switchCompany(this.value)">${S.me.memberships.map((m) => `<option value="${m.business_id}" ${m.business_id === b.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select>` : ''}
     <div><div class="navlabel">WORKSPACE</div><nav class="nav">${NAV.filter((n) => n[3] === 1 && navOk(n)).map(link).join('')}</nav></div>
     ${NAV.some((n) => n[3] === 2 && navOk(n)) ? `<div><div class="navlabel">${can('money.manage') ? 'MONEY' : 'COMPANY'}</div><nav class="nav">${NAV.filter((n) => n[3] === 2 && navOk(n)).map(link).join('')}</nav></div>` : ''}
-    <div class="sidefoot"><a class="ws" href="#/account" style="text-decoration:none;color:inherit" title="Your account"><span class="av" style="background:var(--apricot-soft);color:var(--apricot-ink)">${esc(initials(u.name))}</span><div style="min-width:0"><b>${esc(u.name || u.email)}</b><small>${esc(roleLabel(u.role))} · Account</small></div></a><a class="btn line sm" href="/api/logout">${svg('out', 14)}Log out</a></div>
+    <div class="sidefoot"><a class="ws" href="#/account" style="text-decoration:none;color:inherit" title="Your account"><span class="av" style="background:var(--apricot-soft);color:var(--apricot-ink)">${esc(initials(u.name))}</span><div style="min-width:0"><b>${esc(u.name || u.email)}</b><small>${esc(roleLabel(u.role))} · Account</small></div></a>${S.me.admin ? `<a class="btn line sm" href="#/admin">${svg('gear', 14)}Team console</a>` : ''}<a class="btn line sm" href="/api/logout">${svg('out', 14)}Log out</a></div>
   </aside>
   <div class="main"><header class="top"><div class="crumb">${crumb}</div><div class="topr"><button class="btn primary sm" onclick="openJobForm({})">${svg('plus', 14)}<span class="hide-m">New job</span></button></div></header>
     <main class="content" id="content">${verifyBanner()}${content || '<div class="empty">Loading…</div>'}</main></div></div>
@@ -231,6 +232,7 @@ function pSetup() {
   $('#root').innerHTML = `<div class="auth"><div class="authcard" style="width:min(560px,100%)">
     <div class="row">${LOGO}<b style="font-size:20px">unbusyness</b></div>
     ${verifyBanner()}
+    ${S.me.admin ? `<a class="btn line sm" href="#/admin" style="align-self:flex-start">${svg('gear', 14)}Unbusyness team console</a>` : ''}
     <div><h1>Set up your business</h1><p class="muted" style="margin:6px 0 0">Two minutes. You can change everything later in Settings.</p></div>
     <form class="form two" onsubmit="createBusiness(event)">
       <div class="field full"><label for="bn">Business name</label><input class="input" id="bn" required placeholder="Demo Plumbing Co."></div>
@@ -286,7 +288,7 @@ async function pToday() {
   setContent(h);
 }
 function gettingStarted(d) {
-  if (store.get('ub_gs_hide') === '1' || !can('company.settings')) return '';
+  if (!can('company.settings')) return '';
   const b = S.me.business;
   const steps = [
     ['Check your price list', 'The AI drafts quotes from it.', S.me.services.length > 0 && store.get('ub_prices_seen') === '1', '#/settings/prices'],
@@ -295,8 +297,18 @@ function gettingStarted(d) {
     ['Get paid online', 'Connect Stripe for the Pay button.', b.stripe_ready, '#/settings/payments'],
   ];
   if (steps.every((s) => s[2])) return '';
-  return `<div class="card"><div class="ch"><div><h2>Getting started</h2><p>${steps.filter((s) => s[2]).length} of ${steps.length} done</p></div><button class="btn line sm" onclick="store.set('ub_gs_hide','1');route()">Hide</button></div>
-    ${steps.map((s) => `<a class="li" href="${s[3]}"><span class="ic ${s[2] ? 'green' : 'sand'}" style="width:28px;height:28px">${svg(s[2] ? 'check' : 'plus', 14)}</span><div class="grow"><b>${s[0]}</b><span class="s">${s[1]}</span></div></a>`).join('')}</div>`;
+  // "Hide" rolls the card up instead of removing it; the choice is remembered in this browser
+  const closed = store.get('ub_gs_hide') === '1';
+  const done = steps.filter((s) => s[2]).length;
+  return `<div class="card gs ${closed ? 'closed' : ''}" id="gsCard"><div class="ch"><div><h2>Getting started</h2><p>${done} of ${steps.length} done</p></div>
+      <button class="btn line sm gstog" onclick="toggleStart()" aria-expanded="${!closed}" aria-controls="gsBody"><span class="gsl">${closed ? 'Show' : 'Hide'}</span><span class="chev" aria-hidden="true">${svg('back', 14)}</span></button></div>
+    <div class="gsbar" aria-hidden="true"><i style="width:${Math.round(done / steps.length * 100)}%"></i></div>
+    <div class="gsbody" id="gsBody"><div>${steps.map((s) => `<a class="li" href="${s[3]}"><span class="ic ${s[2] ? 'green' : 'sand'}" style="width:28px;height:28px">${svg(s[2] ? 'check' : 'plus', 14)}</span><div class="grow"><b>${s[0]}</b><span class="s">${s[1]}</span></div></a>`).join('')}</div></div></div>`;
+}
+function toggleStart() {
+  const c = $('#gsCard'); if (!c) return;
+  const closed = c.classList.toggle('closed'); store.set('ub_gs_hide', closed ? '1' : '0');
+  const btn = c.querySelector('.gstog'); btn.setAttribute('aria-expanded', String(!closed)); btn.querySelector('.gsl').textContent = closed ? 'Show' : 'Hide';
 }
 async function taskDone(id) { if (await act(() => api('POST', `/api/tasks/${id}/done`), 'Task done')) route(); }
 async function simulateCall(k) {
@@ -403,7 +415,7 @@ const listActive = (page) => { const st = S.list[page]; const d = LISTS[page].de
 // Draw the frame once; later filter changes only redraw the toolbar and the table, so typing in search never loses focus.
 async function listMount(page, qs, frame) {
   S.list[page] = listState(page, qs);
-  if (LISTS[page].prepare) { await LISTS[page].prepare(); if (gone(page)) return; }
+  if (LISTS[page].prepare) { await LISTS[page].prepare(); if (gone(LISTS[page].route || page)) return; }
   setContent(frame + `<div id="lvstats"></div><div class="lvbar" id="lvbar" role="search"></div><div class="card"><div class="tscroll" id="lvbody"><div class="empty">Loading…</div></div><div id="lvpager"></div></div>`);
   drawListBar(page); syncListUrl(page);
   return listLoad(page);
@@ -418,7 +430,7 @@ async function listLoad(page) {
   const cfg = LISTS[page]; const st = S.list[page]; const seq = ++S.listSeq; const nav = S.nav;
   const body = $('#lvbody'); if (body) body.classList.add('loading');
   let r; try { r = await api('GET', `${cfg.url}?${apiQuery(page, st)}`); } catch (e) { if (seq === S.listSeq && $('#lvbody')) { $('#lvbody').classList.remove('loading'); $('#lvbody').innerHTML = `<div class="empty">${esc(e.message)}</div>`; } return; }
-  if (seq !== S.listSeq || nav !== S.nav || gone(page) || !$('#lvbody')) return; // a newer filter or another page won
+  if (seq !== S.listSeq || nav !== S.nav || gone(cfg.route || page) || !$('#lvbody')) return; // a newer filter or another page won
   if (r.total && r.page > r.pages) { st.page = r.pages; syncListUrl(page); return listLoad(page); }
   if (cfg.stats) $('#lvstats').innerHTML = cfg.stats(r, st);
   const b = $('#lvbody'); b.classList.remove('loading');
@@ -1095,3 +1107,116 @@ async function saveMember(e, id) {
 }
 
 boot();
+
+/* ---------- Unbusyness team console (#/admin) — only for addresses in the PLATFORM_ADMINS secret ---------- */
+function adminShell(tab, content) {
+  const t = (k, label, h) => `<a href="${h}" class="${tab === k ? 'on' : ''}">${label}</a>`;
+  $('#root').innerHTML = `<div class="adm"><header class="admtop"><div class="row">${LOGO}<div><b>Unbusyness team console</b><div class="muted small">Every change here is logged</div></div></div>
+    <nav class="tabs" aria-label="Console">${t('home', 'Overview', '#/admin')}${t('companies', 'Companies', '#/admin/companies')}${t('users', 'People', '#/admin/users')}${t('audit', 'Change log', '#/admin/audit')}</nav>
+    <a class="btn line sm" href="#/">${svg('back', 14)}Back to the app</a></header><main class="admmain" id="content">${content || '<div class="empty">Loading…</div>'}</main></div>`;
+}
+const admRole = (r) => ({ owner: 'Owner', manager: 'Manager', worker: 'Worker' }[r] || r);
+const yesno = (b) => (b ? pill('Yes', 'ok') : pill('No', 'gray'));
+async function pAdmin(sub, id, qs) {
+  if (!S.me.admin) { location.hash = '#/'; return; }
+  if (sub === 'companies') return admCompanies(qs);
+  if (sub === 'company' && id) return admCompany(id);
+  if (sub === 'users') return admUsers(qs);
+  if (sub === 'audit') return admAudit();
+  adminShell('home');
+  const d = await act(() => api('GET', '/api/admin/overview')); if (!d || gone('admin')) return;
+  const t = d.totals;
+  setContent(head('Overview', 'What is happening', 'All companies and people on Unbusyness.') +
+    (t.no_owner ? `<a class="explain" href="#/admin/companies?f=no_owner" style="text-decoration:none;color:inherit;margin-bottom:16px"><span class="ei">!</span><div><b>${t.no_owner} ${t.no_owner === 1 ? 'company has' : 'companies have'} no active owner.</b> Open the list and give someone the owner role.</div></a>` : '') +
+    `<div class="grid g4" style="margin-bottom:16px">${stat('Companies', t.companies, `+${t.companies_7d} this week`, 'tree', 'green', '#/admin/companies')}${stat('People', t.users, `+${t.users_7d} this week`, 'team', 'slate', '#/admin/users')}${stat('Calls and jobs', `${t.calls_7d} · ${t.jobs_7d}`, 'calls · jobs in the last 7 days', 'phone', 'apricot')}${stat('Paid by customers', money0(t.paid_30d), 'invoices paid, last 30 days', 'check', 'green')}</div>
+    <div class="grid g2"><div class="stack">
+      <div class="card"><div class="ch"><h2>New people</h2><a class="small" href="#/admin/users">All people</a></div>${d.signups.map((u) => `<div class="li"><div class="grow"><b>${esc(u.email || u.name)}</b><span class="s">${ago(u.created_at)}${u.companies ? ' · ' + esc(u.companies) : ' · no company yet'}</span></div>${u.verified ? '' : pill('Not confirmed', 'apricot')}</div>`).join('') || '<div class="empty">Nobody yet.</div>'}</div>
+      <div class="card"><div class="ch"><h2>New companies</h2><a class="small" href="#/admin/companies">All companies</a></div>${d.companies.map((b) => `<a class="li" href="#/admin/company/${b.id}"><div class="grow"><b>${esc(b.name)}</b><span class="s">${esc(b.trade || '')} · ${b.members} member${b.members === 1 ? '' : 's'} · ${ago(b.created_at)}</span></div></a>`).join('') || '<div class="empty">No companies yet.</div>'}</div>
+    </div><div class="stack">
+      <div class="card"><div class="ch"><h2>Latest activity</h2></div><div class="cb admfeed" style="padding-top:2px">${d.activity.map((a) => `<div class="act"><div class="grow"><b>${esc(a.text)}</b><div class="muted small"><a href="#/admin/company/${a.business_id}">${esc(a.business_name)}</a> · ${ago(a.created_at)}</div></div></div>`).join('') || '<div class="empty">Nothing yet.</div>'}</div></div>
+      <div class="card"><div class="ch"><h2>Recent changes by our team</h2><a class="small" href="#/admin/audit">Change log</a></div>${auditRows(d.audit.slice(0, 6))}</div>
+    </div></div>`);
+}
+function auditRows(rows) {
+  const what = (a) => { const x = a.details || {}; const b = x.before || {}; const n = x.after || {};
+    return ({ 'membership.update': `${b.role !== n.role ? `Role ${admRole(b.role)} → ${admRole(n.role)}` : ''}${b.active !== n.active ? `${b.role !== n.role ? ', ' : ''}${n.active ? 'restored' : 'removed from company'}` : ''}` || 'No change',
+      'membership.add': `Added as ${admRole(n.role)}`, 'invite.revoke': `Invite for ${x.email || '—'} cancelled`, 'user.block': 'Account blocked', 'user.unblock': 'Account unblocked' })[a.action] || a.action; };
+  return rows.length ? rows.map((a) => `<div class="li"><div class="grow"><b>${esc(what(a))}</b><span class="s">${a.target_email ? esc(a.target_email) + ' · ' : ''}${a.business_name ? `<a href="#/admin/company/${a.business_id}">${esc(a.business_name)}</a> · ` : ''}by ${esc(a.admin_email)} · ${ago(a.created_at)}${a.details && a.details.reason ? ' · “' + esc(a.details.reason) + '”' : ''}</span></div></div>`).join('') : '<div class="empty">No changes yet.</div>';
+}
+
+LISTS.admin_companies = {
+  url: '/api/admin/companies', route: 'admin', defs: { f: 'all', sort: 'created', dir: 'desc', q: '' }, sortDir: { name: 'asc' },
+  empty: 'No companies yet.',
+  bar: (st) => `${lvTabs('admin_companies', 'f', st.f, [['all', 'All'], ['no_owner', 'Without an owner']])}<div class="lvrow">${lvSearch('admin_companies', st, 'Search company or member email…')}</div>`,
+  table: (r, st) => `<table class="tbl"><thead><tr>${sortTh('admin_companies', st, 'name', 'Company')}<th>Owners</th>${sortTh('admin_companies', st, 'members', 'People', 'num')}<th class="num hide-m">Calls</th><th class="num hide-m">Jobs</th><th class="num hide-m">Invoices</th>${sortTh('admin_companies', st, 'last', 'Last activity', 'hide-m')}${sortTh('admin_companies', st, 'created', 'Created', 'hide-m')}</tr></thead><tbody>
+    ${r.rows.map((b) => `<tr class="click" onclick="go('#/admin/company/${b.id}')"><td><b>${esc(b.name)}</b><div class="muted small">${esc(b.trade || '')} · ${esc(b.currency)}</div></td><td>${b.owners ? esc(b.owners) : pill('No owner', 'red')}</td><td class="num">${b.members}</td><td class="num hide-m">${b.calls}</td><td class="num hide-m">${b.jobs}</td><td class="num hide-m">${b.invoices}</td><td class="hide-m muted">${b.last_activity ? ago(b.last_activity) : '—'}</td><td class="hide-m muted">${fDate(b.created_at)}</td></tr>`).join('')}</tbody></table>`,
+};
+async function admCompanies(qs) {
+  adminShell('companies');
+  return listMount('admin_companies', qs, head('Companies', 'Companies', 'Open a company to see its people, invites and activity.'));
+}
+async function admCompany(id) {
+  adminShell('companies');
+  const d = await act(() => api('GET', `/api/admin/companies/${id}`)); if (!d || gone('admin')) return;
+  const b = d.company; const c = d.counts; S.admCompany = d;
+  const owners = d.members.filter((m) => m.role === 'owner' && m.active).length;
+  setContent(`<a href="#/admin/companies" class="btn line sm" style="margin-bottom:14px">${svg('back', 14)}All companies</a>` +
+    head('Company', esc(b.name), esc([b.trade, b.email, b.phone].filter(Boolean).join(' · ')) + ` · created ${fDate(b.created_at)}`) +
+    (owners ? '' : `<div class="explain" style="margin-bottom:16px"><span class="ei">!</span><div><b>No active owner.</b> Nobody can see money or settings. Give someone the owner role below.</div></div>`) +
+    `<div class="grid g4" style="margin-bottom:16px">${stat('Customers', c.customers, `${c.calls} calls`, 'user', 'slate')}${stat('Jobs', c.jobs, `${c.quotes} quotes`, 'cal', 'green')}${stat('Paid', money0(c.paid_total), `${c.invoices} invoices`, 'check', 'green')}${stat('Waiting to be paid', money0(c.unpaid_total), 'sent invoices', 'clock', 'apricot')}</div>
+    <div class="grid g2"><div class="stack">
+      <div class="card"><div class="ch"><div><h2>People</h2><p>Change roles, remove or restore access. A company always keeps at least one owner.</p></div></div>
+        <div class="tscroll"><table class="tbl"><thead><tr><th>Person</th><th>Role</th><th class="hide-m">Last login</th><th></th></tr></thead><tbody>
+        ${d.members.map((m) => `<tr><td><b>${esc(m.name || m.email)}</b><div class="muted small">${esc(m.email)}${m.verified ? '' : ' · not confirmed'}${m.user_active ? '' : ' · account blocked'}</div></td>
+          <td><select class="input" style="min-height:34px;font-size:13px;width:auto" aria-label="Role of ${attr(m.email)}" onchange="admMember(${b.id},${m.id},{role:this.value},this)" ${m.active ? '' : 'disabled'}>${d.roles.map((r) => `<option value="${r.key}" ${r.key === m.role ? 'selected' : ''}>${esc(r.label)}</option>`).join('')}</select>${m.active ? '' : ' ' + pill('Removed', 'gray')}</td>
+          <td class="hide-m muted">${m.last_login_at ? ago(m.last_login_at) : '—'}</td>
+          <td class="num">${m.active ? `<button class="btn line sm" onclick="admMember(${b.id},${m.id},{active:false})">Remove</button>` : `<button class="btn soft sm" onclick="admMember(${b.id},${m.id},{active:true})">Restore</button>`}</td></tr>`).join('') || '<tr><td colspan="4" class="muted">Nobody.</td></tr>'}</tbody></table></div></div>
+      <div class="card cb stack"><b>Add someone who already has an account</b><form class="form two" onsubmit="admAdd(event,${b.id})"><div class="field"><label for="aae">Email</label><input class="input" id="aae" type="email" required></div>
+        <div class="field"><label for="aar">Role</label><select class="input" id="aar">${d.roles.map((r) => `<option value="${r.key}" ${r.key === 'owner' ? 'selected' : ''}>${esc(r.label)}</option>`).join('')}</select></div>
+        <div class="field full"><label for="aaw">Why (for the change log)</label><input class="input" id="aaw" placeholder="e.g. Owner lost access after opening an invite"></div><div class="btns full"><button class="btn primary">${svg('plus', 16)}Add to company</button></div></form></div>
+      <div class="card"><div class="ch"><h2>Open invites</h2></div>${d.invites.map((i) => `<div class="li"><div class="grow"><b>${esc(i.email || 'Any address (old invite)')}</b><span class="s">${admRole(i.role)}${i.name ? ' · ' + esc(i.name) : ''} · ${ago(i.created_at)}</span></div><button class="btn line sm" onclick="admRevoke(${b.id},'${i.id}')">Cancel</button></div>`).join('') || '<div class="empty">No open invites.</div>'}</div>
+    </div><div class="stack">
+      <div class="card cb stack"><b>Setup</b><div class="grid g2" style="gap:10px">
+        <div class="fld"><small>Voice agent</small><b>${esc(b.voice_provider || 'Not set')}</b></div><div class="fld"><small>Online payments</small><b>${b.stripe_ready ? 'Ready' : b.stripe_connected ? 'Started' : 'Not connected'}</b></div>
+        <div class="fld"><small>Currency · time zone</small><b>${esc(b.currency)} · ${esc(b.timezone)}</b></div><div class="fld"><small>Plan</small><b>${esc(b.plan)}</b></div>
+        ${d.integrations.map((x) => `<div class="fld"><small>${x.kind === 'email' ? 'Mailbox' : 'Calendar'}</small><b>${esc(x.provider)} · ${esc(x.status)}</b>${x.last_error ? `<div class="small" style="color:var(--red)">${esc(x.last_error)}</div>` : ''}</div>`).join('')}</div></div>
+      <div class="card"><div class="ch"><h2>Activity</h2></div><div class="cb admfeed" style="padding-top:2px">${d.activity.map((a) => `<div class="act"><div class="grow"><b>${esc(a.text)}</b><div class="muted small">${ago(a.created_at)}</div></div></div>`).join('') || '<div class="empty">Nothing yet.</div>'}</div></div>
+    </div></div>`);
+}
+// Every change asks for a short reason, which goes to the change log.
+function admConfirm(title, text, run, cancel) {
+  window._admRun = run; window._admCancel = cancel;
+  modal(title, `<form class="form" onsubmit="event.preventDefault();window._admRun(val('admWhy'))"><p style="margin:0">${text}</p><div class="field"><label for="admWhy">Why (for the change log)</label><input class="input" id="admWhy" placeholder="Optional"></div>
+    <div class="btns"><button class="btn primary">${svg('check', 16)}Confirm</button><button type="button" class="btn line" onclick="closeLayer();window._admCancel&&window._admCancel()">Cancel</button></div></form>`);
+}
+function admMember(bizId, userId, patch, sel) {
+  const m = S.admCompany.members.find((x) => x.id === userId); const who = esc(m.email || m.name);
+  const text = patch.role ? `Change <b>${who}</b> from ${admRole(m.role)} to <b>${admRole(patch.role)}</b>?` : patch.active ? `Give <b>${who}</b> access to this company again?` : `Remove <b>${who}</b> from this company? Their account stays, they just lose access here.`;
+  admConfirm('Change access', text, async (reason) => { if (await act(() => api('PUT', `/api/admin/companies/${bizId}/members/${userId}`, { ...patch, reason }), 'Saved')) { closeLayer(); admCompany(bizId); } }, () => { if (sel) sel.value = m.role; });
+}
+async function admAdd(e, bizId) { e.preventDefault(); if (await act(() => api('POST', `/api/admin/companies/${bizId}/members`, { email: val('aae'), role: val('aar'), reason: val('aaw') }), 'Added')) admCompany(bizId); }
+function admRevoke(bizId, inviteId) { admConfirm('Cancel invite', 'The link will stop working.', async (reason) => { if (await act(() => api('POST', `/api/admin/companies/${bizId}/invites/${inviteId}/revoke`, { reason }), 'Invite cancelled')) { closeLayer(); admCompany(bizId); } }); }
+
+LISTS.admin_users = {
+  url: '/api/admin/users', route: 'admin', defs: { f: 'all', sort: 'created', dir: 'desc', q: '' }, sortDir: { email: 'asc' },
+  empty: 'Nobody yet.',
+  bar: (st) => `${lvTabs('admin_users', 'f', st.f, [['all', 'All'], ['no_company', 'No company'], ['unverified', 'Email not confirmed'], ['blocked', 'Blocked']])}<div class="lvrow">${lvSearch('admin_users', st, 'Search email or name…')}</div>`,
+  table: (r, st) => `<table class="tbl"><thead><tr>${sortTh('admin_users', st, 'email', 'Person')}<th>Companies and roles</th><th class="hide-m">Login</th>${sortTh('admin_users', st, 'login', 'Last login', 'hide-m')}${sortTh('admin_users', st, 'created', 'Joined', 'hide-m')}<th></th></tr></thead><tbody>
+    ${r.rows.map((u) => `<tr><td><b>${esc(u.email || '—')}</b>${u.admin ? ' ' + pill('Our team', 'slate') : ''}<div class="muted small">${esc(u.name || '')}${u.verified || u.login !== 'email' ? '' : ' · email not confirmed'}</div></td>
+      <td>${u.companies.length ? u.companies.map((c) => `<a href="#/admin/company/${c.business_id}" class="small" style="display:block">${esc(c.name)} · ${admRole(c.role)}${c.active ? '' : ' (removed)'}</a>`).join('') : '<span class="muted small">No company</span>'}</td>
+      <td class="hide-m muted">${esc({ email: 'Email', google: 'Google', microsoft: 'Microsoft', replit: 'Replit', dev: 'Demo' }[u.login] || u.login)}</td><td class="hide-m muted">${u.last_login_at ? ago(u.last_login_at) : '—'}</td><td class="hide-m muted">${fDate(u.created_at)}</td>
+      <td class="num">${u.id === S.me.user.id ? '' : u.active ? `<button class="btn line sm" onclick="admBlock(${u.id},false,'${attr(u.email)}')">Block</button>` : `<button class="btn soft sm" onclick="admBlock(${u.id},true,'${attr(u.email)}')">Unblock</button>`}</td></tr>`).join('')}</tbody></table>`,
+};
+async function admUsers(qs) {
+  adminShell('users');
+  return listMount('admin_users', qs, head('People', 'People', 'Everyone with an Unbusyness account. Change roles from the company page.'));
+}
+function admBlock(id, active, email) {
+  admConfirm(active ? 'Unblock account' : 'Block account', active ? `Let <b>${esc(email)}</b> log in again?` : `Block <b>${esc(email)}</b>? They are logged out everywhere and cannot log in until you unblock them.`,
+    async (reason) => { if (await act(() => api('PUT', `/api/admin/users/${id}`, { active, reason }), 'Saved')) { closeLayer(); listLoad('admin_users'); } });
+}
+async function admAudit() {
+  adminShell('audit');
+  const rows = await act(() => api('GET', '/api/admin/audit')); if (!rows || gone('admin')) return;
+  setContent(head('Change log', 'Change log', 'Every change our team made in this console: who, when and why.') + `<div class="card">${auditRows(rows)}</div>`);
+}

@@ -337,3 +337,17 @@ CREATE TABLE IF NOT EXISTS auth_tokens (
 -- Team invites are bound to the invited person's email address (lib/invites.js).
 -- Older invites keep an empty address and still work, but can never change an existing membership.
 ALTER TABLE invites ADD COLUMN IF NOT EXISTS email TEXT NOT NULL DEFAULT '';
+
+-- Unbusyness team console (lib/admin.js): every change made there is recorded here.
+CREATE TABLE IF NOT EXISTS admin_audit (
+  id             SERIAL PRIMARY KEY,
+  admin_user_id  INT REFERENCES users(id) ON DELETE SET NULL,
+  admin_email    TEXT NOT NULL DEFAULT '',
+  action         TEXT NOT NULL,
+  business_id    INT REFERENCES businesses(id) ON DELETE SET NULL,
+  target_user_id INT REFERENCES users(id) ON DELETE SET NULL,
+  details        JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS admin_audit_time ON admin_audit(created_at DESC);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;

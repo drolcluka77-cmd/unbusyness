@@ -71,6 +71,18 @@ Pri Googlu in Microsoftu dodaj **oba** redirect naslova, enega za prijavo in ene
 - **Več podjetij:** zveza User + Membership + Company pomeni, da je ena oseba lahko v več podjetjih in jih menja v stranskem meniju.
 - **Nove vloge ali pravice:** dodaš jih v `lib/rbac.js` (seznam `PERMISSIONS` in `ROLES`). Vlogo samo za eno podjetje dodaš v tabelo `company_roles`.
 
+### Vabila v ekipo
+- **Vabilo je vezano na email:** ko ustvariš vabilo, vpišeš email osebe. Povezava deluje samo za ta naslov in samo enkrat.
+- **Član ostane, kar je:** če povezavo odpre nekdo, ki je že v podjetju, se mu vloga ne spremeni.
+- **Test:** `node scripts/src/verify-unbusyness-invites.mjs`.
+
+### Konzola za ekipo Unbusyness (`#/admin`)
+- **Dostop:** samo naslovi v skrivnosti `PLATFORM_ADMINS` (ločeni z vejico, npr. `drolcluka77@gmail.com`), in samo če je email potrjen. V aplikaciji nihče ne more postati admin.
+- **Kaj vidiš:** vsa podjetja in ljudi, aktivnost, podjetja brez lastnika, odprta vabila, stanje integracij.
+- **Kaj lahko spremeniš:** vlogo (tudi delavec → lastnik), odstranitev ali vrnitev dostopa, dodajanje obstoječega računa v podjetje, preklic vabila, blokiranje računa.
+- **Zaščita:** podjetje vedno obdrži vsaj enega aktivnega lastnika. Vsaka sprememba se zapiše v `admin_audit` (kdo, kdaj, prej → potem, zakaj). Gesla, žetoni, dostopi do nabiralnikov in plačilni podatki se nikoli ne prikažejo.
+- **Za neadmine** konzola ne obstaja (odgovor 404).
+
 ## Integracije (Settings → Integrations)
 
 Najprej obvezno dodaj Secret **`ENCRYPTION_KEY`**: z njim se šifrirajo žetoni in gesla. Ustvariš ga v Replit Shellu:

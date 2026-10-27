@@ -160,7 +160,7 @@ function routes(router) {
       if (!can(req, 'company.settings')) { delete business.voice_secret; delete business.stripe_account; }
     }
     return { user: { id: req.user.id, name: req.user.name, email: req.user.email, role: req.user.role, phone: req.user.phone, verified: !!req.user.email_verified_at || !String(req.user.auth_sub || '').startsWith('email:') }, business, team, services,
-      perms: req.perms, roles: roleList(), memberships: req.memberships.map((m) => ({ business_id: m.business_id, name: m.business_name, role: m.role })), devLogin: DEV_LOGIN, stripe: svc.stripeOn(), ai: !!process.env.ANTHROPIC_API_KEY, email: !!(business && await db.one("SELECT 1 FROM integrations WHERE business_id=$1 AND kind='email' AND status='connected'", [business.id])), sms: !!process.env.TWILIO_ACCOUNT_SID, notice };
+      perms: req.perms, roles: roleList(), memberships: req.memberships.map((m) => ({ business_id: m.business_id, name: m.business_name, role: m.role })), devLogin: DEV_LOGIN, stripe: svc.stripeOn(), ai: !!process.env.ANTHROPIC_API_KEY, email: !!(business && await db.one("SELECT 1 FROM integrations WHERE business_id=$1 AND kind='email' AND status='connected'", [business.id])), sms: !!process.env.TWILIO_ACCOUNT_SID, notice, admin: require('./admin').isPlatformAdmin(req.user) };
   });
 
   router.post('/api/business', async (req, res, ctx) => {

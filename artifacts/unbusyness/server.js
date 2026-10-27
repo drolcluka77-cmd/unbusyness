@@ -9,6 +9,7 @@ const api = require('./lib/api');
 const voice = require('./lib/voice');
 const integrations = require('./lib/integrations');
 const accounts = require('./lib/accounts');
+const admin = require('./lib/admin');
 
 const PORT = Number(process.env.PORT || 3000);
 const router = createRouter();
@@ -17,6 +18,7 @@ api.routes(router);
 voice.routes(router, api);
 integrations.routes(router);
 accounts.routes(router);
+admin.routes(router);
 const statics = serveStatic(path.join(__dirname, 'public'));
 
 const server = http.createServer(async (req, res) => {
