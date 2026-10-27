@@ -61,10 +61,10 @@ const manages = () => can('jobs.manage');
 const explain = (t) => `<div class="explain"><span class="ei">i</span><div>${t}</div></div>`;
 const pill = (txt, tone) => `<span class="pill ${tone}">${esc(txt)}</span>`;
 
-function toast(m, err) {
+function toast(m, err, ms) {
   const h = $('#toastHost');
   h.innerHTML = `<div class="toast ${err ? 'err' : ''}" role="status">${svg(err ? 'alert' : 'check', 16)}<span>${esc(m)}</span></div>`;
-  clearTimeout(window._tt); window._tt = setTimeout(() => (h.innerHTML = ''), err ? 5000 : 2800);
+  clearTimeout(window._tt); window._tt = setTimeout(() => (h.innerHTML = ''), ms || (err ? 5000 : 2800));
 }
 async function api(method, url, body) {
   const r = await fetch(url, { method, headers: body ? { 'Content-Type': 'application/json' } : {}, body: body ? JSON.stringify(body) : undefined, credentials: 'same-origin' });
@@ -94,8 +94,10 @@ const NEXT = { scheduled: ['on_the_way', "I'm on my way", 'truck'], on_the_way: 
 window.addEventListener('hashchange', route);
 async function boot() {
   try { S.me = await api('GET', '/api/me'); } catch { S.me = { user: null }; }
-  route();
+  route(); showNotice();
 }
+// One-time message from the server after a login or an invite link (e.g. "you are already a member")
+function showNotice() { const n = S.me && S.me.notice; if (n && n.message) { S.me.notice = null; toast(n.message, n.status !== 'joined', n.status === 'joined' ? 3500 : 12000); } }
 function route() {
   const h = location.hash || '#/';
   $('#layer').innerHTML = ''; S.nav = (S.nav || 0) + 1;
@@ -157,11 +159,11 @@ async function pLogin(qs, mode) {
       ${cfg.google ? `<a class="btn line lg" href="/api/auth/oauth/google/start"><svg width="18" height="18" viewBox="0 0 48 48" aria-hidden="true"><path fill="#FFC107" d="M43.6 20.5H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20 20-8.9 20-20c0-1.3-.1-2.4-.4-3.5z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.8 1.2 7.9 3.1l5.7-5.7C34 6.1 29.3 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.5 39.6 16.2 44 24 44z"/><path fill="#1976D2" d="M43.6 20.5H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.4-.4-3.5z"/></svg>Continue with Google</a>` : ''}
       ${cfg.microsoft ? `<a class="btn line lg" href="/api/auth/oauth/microsoft/start"><svg width="16" height="16" viewBox="0 0 23 23" aria-hidden="true"><path fill="#f35325" d="M1 1h10v10H1z"/><path fill="#81bc06" d="M12 1h10v10H12z"/><path fill="#05a6f0" d="M1 12h10v10H1z"/><path fill="#ffba08" d="M12 12h10v10H12z"/></svg>Continue with Microsoft</a>` : ''}</div>` : '';
   const forms = {
-    login: `<form class="form" onsubmit="doLogin(event)"><div class="field"><label for="le">Email</label><input class="input" id="le" type="email" required autocomplete="email" placeholder="you@company.com"></div>
+    login: `<form class="form" onsubmit="doLogin(event)"><div class="field"><label for="le">Email</label><input class="input" id="le" type="email" required autocomplete="email" placeholder="you@company.com" value="${attr(m.inviteEmail || '')}"></div>
       <div class="field"><div class="row between"><label for="lp">Password</label><a href="#/login?mode=forgot" class="small">Forgot password?</a></div><input class="input" id="lp" type="password" required autocomplete="current-password"></div>
       <button class="btn primary lg">Log in</button></form>${social}<p class="muted small" style="margin:0;text-align:center">New to Unbusyness? <a href="#/login?mode=signup${invite ? '&invite=1' : ''}">Create an account</a></p>`,
     signup: `<form class="form" onsubmit="doSignup(event)"><div class="field"><label for="sn2">Your name</label><input class="input" id="sn2" required autocomplete="name" placeholder="Janez Novak"></div>
-      <div class="field"><label for="se">Email</label><input class="input" id="se" type="email" required autocomplete="email"></div>
+      <div class="field"><label for="se">Email</label><input class="input" id="se" type="email" required autocomplete="email" value="${attr(m.inviteEmail || '')}"></div>
       <div class="field"><label for="sp">Password</label><input class="input" id="sp" type="password" required minlength="10" autocomplete="new-password"><span class="hint">At least 10 characters.</span></div>
       <button class="btn primary lg">Create account</button></form>${social}<p class="muted small" style="margin:0;text-align:center">Already have an account? <a href="#/login${invite ? '?invite=1' : ''}">Log in</a></p>`,
     forgot: `<form class="form" onsubmit="doForgot(event)"><div class="field"><label for="fe">Email</label><input class="input" id="fe" type="email" required autocomplete="email"></div><button class="btn primary lg">Send reset link</button></form>
@@ -174,6 +176,7 @@ async function pLogin(qs, mode) {
     <div class="row">${LOGO}<b style="font-size:20px;letter-spacing:-.6px">unbusyness</b></div>
     <div><h1>${titles[mode]}</h1><p class="muted" style="margin:6px 0 0">${subs[mode]}</p></div>
     ${err ? `<div class="explain"><span class="ei">!</span><div>${err === 'invite' ? 'This invite link is no longer valid. Ask for a new one.' : esc(err.length > 12 ? err : 'Login did not finish. Please try again.')}</div></div>` : ''}
+    ${m.inviteEmail && (mode === 'login' || mode === 'signup') ? `<div class="explain"><span class="ei">i</span><div>This invite is for <b>${esc(m.inviteEmail)}</b>. Use that email address to join.</div></div>` : ''}
     ${notice ? `<div class="explain" style="background:var(--ok-soft);color:#1f4a35"><span class="ei">✓</span><div>${esc(notice)}</div></div>` : ''}
     ${forms[mode]}
     ${cfg.replit && mode === 'login' ? '<a class="btn line sm" href="/api/login" style="align-self:center">Developer: log in with Replit</a>' : ''}
@@ -182,7 +185,7 @@ async function pLogin(qs, mode) {
   </div></div>`;
   window._resetToken = qs.get('token');
 }
-async function afterLogin() { S.me = await api('GET', '/api/me'); location.hash = '#/'; route(); }
+async function afterLogin() { S.me = await api('GET', '/api/me'); location.hash = '#/'; route(); showNotice(); }
 async function doLogin(e) { e.preventDefault(); if (await act(() => api('POST', '/api/auth/login', { email: val('le'), password: val('lp') }))) afterLogin(); }
 async function doSignup(e) {
   e.preventDefault();
@@ -1008,10 +1011,11 @@ async function pSettings(tab, qs) {
     h += `<div class="grid g2"><div class="card"><div class="ch"><div><h2>Your team</h2><p>Crew members see only their own jobs, without prices.</p></div></div>
       ${S.me.team.map((t) => `<div class="li"><span class="av" style="background:${t.color};color:#fff">${esc(initials(t.name || t.email))}</span><div class="grow"><b>${esc(t.name || t.email)}${t.id === S.me.user.id ? ' (you)' : ''}</b><span class="s">${esc(roleLabel(t.role))}${t.trade_role ? ' · ' + esc(t.trade_role) : ''}${t.active ? '' : ' · removed'}</span></div>${t.id !== S.me.user.id && rankOf(t.role) <= rankOf(S.me.user.role) ? `<button class="btn line sm" onclick='editMember(${JSON.stringify(t).replace(/'/g, '&#39;')})'>Edit</button>` : ''}</div>`).join('')}</div>
       <div class="card cb stack"><b>Invite someone</b><form class="form" onsubmit="invite(event)"><div class="field"><label for="in">Name</label><input class="input" id="in" placeholder="Carlos Méndez"></div>
+        <div class="field"><label for="iem">Their email</label><input class="input" id="iem" type="email" required autocomplete="off" placeholder="carlos@gmail.com"><span class="hint">The link only works for this address.</span></div>
         <div class="field"><label for="iro">Access</label><select class="input" id="iro">${assignableRoles().map((r) => `<option value="${r.key}" ${r.key === 'worker' ? 'selected' : ''}>${esc(r.label)}</option>`).join('')}</select></div>
         <div class="field"><label for="ir">Job title</label><input class="input" id="ir" placeholder="Plumber"></div><button class="btn primary">${svg('plus', 16)}Create invite link</button></form><div id="inviteOut"></div>
       <div class="stack small">${(S.me.roles || []).map((r) => `<div><b>${esc(r.label)}:</b> <span class="muted">${esc(ROLE_HELP[r.key] || '')}</span></div>`).join('')}</div>
-      ${explain('Send the link by text or WhatsApp. They log in on their phone and see their jobs right away. Tip: add the app to the home screen.')}</div></div>`;
+      ${explain('Send the link by text or WhatsApp. They sign in with the email address you entered and see their jobs right away. Tip: add the app to the home screen.')}</div></div>`;
   }
   if (tab === 'messages') {
     const box = await act(() => api('GET', '/api/outbox')) || [];
@@ -1047,8 +1051,8 @@ async function rotateSecret() { if (await act(() => api('POST', '/api/business/r
 async function connectStripe() { const r = await act(() => api('POST', '/api/stripe/connect')); if (r) location.href = r.url; }
 async function invite(e) {
   e.preventDefault();
-  const r = await act(() => api('POST', '/api/invites', { name: val('in'), trade_role: val('ir'), role: val('iro') })); if (!r) return;
-  $('#inviteOut').innerHTML = `<div class="field"><span class="lab">INVITE LINK (works once)</span><div class="code">${esc(r.url)}</div></div><div class="btns"><button class="btn soft sm" onclick="navigator.clipboard.writeText('${r.url}').then(()=>toast('Link copied'))">${svg('copy', 14)}Copy link</button><a class="btn line sm" href="sms:?&body=${encodeURIComponent('Join our team on Unbusyness: ' + r.url)}">Send by text</a></div>`;
+  const r = await act(() => api('POST', '/api/invites', { name: val('in'), email: val('iem'), trade_role: val('ir'), role: val('iro') })); if (!r) return;
+  $('#inviteOut').innerHTML = `<div class="field"><span class="lab">INVITE LINK (works once, only for ${esc(r.email)})</span><div class="code">${esc(r.url)}</div></div><div class="btns"><button class="btn soft sm" onclick="navigator.clipboard.writeText('${r.url}').then(()=>toast('Link copied'))">${svg('copy', 14)}Copy link</button><a class="btn line sm" href="sms:?&body=${encodeURIComponent('Join our team on Unbusyness: ' + r.url)}">Send by text</a></div>`;
 }
 const ROLE_HELP = { owner: 'Everything, including money, settings and integrations.', manager: 'Team, customers, calls, jobs, tasks and the calendar. No prices or invoices.', worker: 'Only their own jobs, tasks and schedule. No prices.' };
 const RANK = { owner: 3, manager: 2, worker: 1 };

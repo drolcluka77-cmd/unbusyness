@@ -69,15 +69,9 @@ async function upsertUser({ sub, email, name }, pendingInvite) {
     user = await db.one('UPDATE users SET email=COALESCE(NULLIF($2,\'\'), email), name=CASE WHEN name=\'\' THEN $3 ELSE name END WHERE id=$1 RETURNING *', [user.id, email || '', name || '']);
   }
   if (pendingInvite) {
-    const inv = await db.one('SELECT * FROM invites WHERE token=$1 AND used_at IS NULL', [pendingInvite]);
-    if (inv) {
-      await db.query(`INSERT INTO memberships(business_id, user_id, role, trade_role, color) VALUES($1,$2,$3,$4,$5)
-        ON CONFLICT (business_id, user_id) DO UPDATE SET role=EXCLUDED.role, trade_role=EXCLUDED.trade_role, active=TRUE`,
-      [inv.business_id, user.id, inv.role, inv.trade_role || '', ['#E8915F', '#4F5F80', '#8A5A9E', '#2F7A55', '#B23A32'][user.id % 5]]);
-      if (inv.name && !user.name) await db.query('UPDATE users SET name=$2 WHERE id=$1', [user.id, inv.name]);
-      await db.query('UPDATE invites SET used_at=now() WHERE token=$1', [inv.token]);
-      user.joinedBusiness = inv.business_id;
-    }
+    const r = await require('./invites').acceptInvite(user, pendingInvite);
+    user.invite = r;
+    if (r.status === 'joined') user.joinedBusiness = r.business_id;
   }
   return user;
 }
@@ -153,7 +147,7 @@ function routes(router) {
     const c = await verifyIdToken(tok.id_token, o.nonce);
     const name = [c.first_name, c.last_name].filter(Boolean).join(' ') || c.name || c.username || '';
     const user = await upsertUser({ sub: 'replit:' + c.sub, email: c.email, name }, req.session.data.invite);
-    await startUserSession(req, res, user.id, user.joinedBusiness ? { business_id: user.joinedBusiness } : {});
+    await startUserSession(req, res, user.id, { ...(user.joinedBusiness ? { business_id: user.joinedBusiness } : {}), ...(user.invite ? { notice: user.invite.status } : {}) });
     redirect(res, o.returnTo && /^\/(?![\/\\])/.test(o.returnTo) ? o.returnTo : '/');
   });
 
@@ -180,7 +174,7 @@ function routes(router) {
     if (!email) fail(400, 'Email is required');
     await ensureSession(req, res);
     const user = await upsertUser({ sub: 'dev:' + email, email, name: String(ctx.body.name || '').trim() }, req.session.data.invite);
-    await startUserSession(req, res, user.id, user.joinedBusiness ? { business_id: user.joinedBusiness } : {});
+    await startUserSession(req, res, user.id, { ...(user.joinedBusiness ? { business_id: user.joinedBusiness } : {}), ...(user.invite ? { notice: user.invite.status } : {}) });
     return { ok: true };
   });
 
@@ -198,8 +192,10 @@ function routes(router) {
     const inv = await db.one('SELECT * FROM invites WHERE token=$1 AND used_at IS NULL', [ctx.params.token]);
     if (!inv) return redirect(res, '/#/login?error=invite');
     if (req.user) {
-      await upsertUser({ sub: req.user.auth_sub, email: req.user.email, name: req.user.name }, inv.token);
-      req.session.data.business_id = inv.business_id; await saveSessionData(req);
+      // Already signed in: only the invited address can join, and an existing membership never changes.
+      const r = await require('./invites').acceptInvite(req.user, inv.token);
+      if (r.status === 'joined') req.session.data.business_id = r.business_id;
+      req.session.data.notice = r.status; await saveSessionData(req);
       return redirect(res, '/');
     }
     await ensureSession(req, res);

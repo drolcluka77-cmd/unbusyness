@@ -4,6 +4,7 @@
 'use strict';
 const crypto = require('crypto');
 const db = require('./db');
+const { acceptInvite } = require('./invites');
 const { fail, redirect } = require('./http');
 const { startUserSession, ensureSession, saveSessionData, originOf, rid } = require('./auth');
 const { sendSystemEmail, layout } = require('./mailer');
@@ -61,21 +62,13 @@ async function sendVerify(req, user) {
     'confirmation');
 }
 
-// Join the company from a pending invite (same rules as auth.js upsertUser).
-async function joinInvite(userId, token) {
-  if (!token) return null;
-  const inv = await db.one('SELECT * FROM invites WHERE token=$1 AND used_at IS NULL', [token]);
-  if (!inv) return null;
-  await db.query(`INSERT INTO memberships(business_id, user_id, role, trade_role, color) VALUES($1,$2,$3,$4,$5)
-    ON CONFLICT (business_id, user_id) DO UPDATE SET role=EXCLUDED.role, trade_role=EXCLUDED.trade_role, active=TRUE`,
-  [inv.business_id, userId, inv.role, inv.trade_role || '', ['#E8915F', '#4F5F80', '#8A5A9E', '#2F7A55', '#B23A32'][userId % 5]]);
-  await db.query('UPDATE invites SET used_at=now() WHERE token=$1', [inv.token]);
-  return inv.business_id;
-}
+// Join the company from a pending invite (rules in lib/invites.js).
 async function finishLogin(req, res, user) {
   const invite = req.session && req.session.data.invite;
-  const joined = await joinInvite(user.id, invite);
-  await startUserSession(req, res, user.id, joined ? { business_id: joined } : {}); // new session id on every login
+  const r = invite ? await acceptInvite(user, invite) : null;
+  // New session id on every login. The result is shown once in the app (/api/me → notice).
+  await startUserSession(req, res, user.id, { ...(r && r.status === 'joined' ? { business_id: r.business_id } : {}), ...(r ? { notice: r.status } : {}) });
+  return r;
 }
 
 /* ---------- Google / Microsoft login (only openid email profile) ---------- */

@@ -10,6 +10,7 @@ const calendar = require('./integrations/calendar');
 const JOB_KINDS = Object.keys(calendar.KINDS);
 const { renderDoc, publicPage, DOC_CSS, esc, money, day } = require('./docs');
 const L = require('./lists');
+const invites = require('./invites');
 
 // ---------- helpers ----------
 const biz = (req) => db.one('SELECT * FROM businesses WHERE id=$1', [req.user.business_id]);
@@ -144,7 +145,13 @@ const SAMPLE_CALLS = [
 function routes(router) {
   // Session + app bootstrap
   router.get('/api/me', async (req) => {
-    if (!req.user) return { user: null, devLogin: DEV_LOGIN, invite: !!(req.session && req.session.data.invite) };
+    if (!req.user) {
+      const inv = req.session && req.session.data.invite ? await invites.pending(req.session.data.invite) : null;
+      return { user: null, devLogin: DEV_LOGIN, invite: !!inv, inviteEmail: (inv && inv.email) || '' };
+    }
+    // One-time message from the last login or invite link (e.g. "you are already a member")
+    let notice = null;
+    if (req.session && req.session.data.notice) { notice = { status: req.session.data.notice, message: invites.MESSAGES[req.session.data.notice] || '' }; delete req.session.data.notice; await saveSessionData(req); }
     const business = req.user.business_id ? await biz(req) : null;
     const team = business && (can(req, 'team.manage') || can(req, 'jobs.manage')) ? await db.many(`${TEAM_SQL} ORDER BY m.active DESC, m.role, u.id`, [business.id]) : business ? await db.many(`${TEAM_SQL} AND m.user_id=$2`, [business.id, req.user.id]) : [];
     const services = business && isOwner(req) ? await db.many('SELECT * FROM services WHERE business_id=$1 ORDER BY position, id', [business.id]) : [];
@@ -153,7 +160,7 @@ function routes(router) {
       if (!can(req, 'company.settings')) { delete business.voice_secret; delete business.stripe_account; }
     }
     return { user: { id: req.user.id, name: req.user.name, email: req.user.email, role: req.user.role, phone: req.user.phone, verified: !!req.user.email_verified_at || !String(req.user.auth_sub || '').startsWith('email:') }, business, team, services,
-      perms: req.perms, roles: roleList(), memberships: req.memberships.map((m) => ({ business_id: m.business_id, name: m.business_name, role: m.role })), devLogin: DEV_LOGIN, stripe: svc.stripeOn(), ai: !!process.env.ANTHROPIC_API_KEY, email: !!(business && await db.one("SELECT 1 FROM integrations WHERE business_id=$1 AND kind='email' AND status='connected'", [business.id])), sms: !!process.env.TWILIO_ACCOUNT_SID };
+      perms: req.perms, roles: roleList(), memberships: req.memberships.map((m) => ({ business_id: m.business_id, name: m.business_name, role: m.role })), devLogin: DEV_LOGIN, stripe: svc.stripeOn(), ai: !!process.env.ANTHROPIC_API_KEY, email: !!(business && await db.one("SELECT 1 FROM integrations WHERE business_id=$1 AND kind='email' AND status='connected'", [business.id])), sms: !!process.env.TWILIO_ACCOUNT_SID, notice };
   });
 
   router.post('/api/business', async (req, res, ctx) => {
@@ -225,9 +232,14 @@ function routes(router) {
     need(req, 'team.manage');
     const role = ROLES[ctx.body.role] ? ctx.body.role : 'worker';
     if (rank(role) > rank(req.user.role) || (role === 'owner' && req.user.role !== 'owner')) fail(403, 'You cannot invite someone with a higher role than yours');
+    // The link only works for this address (see lib/invites.js).
+    const email = invites.normEmail(ctx.body.email);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 200) fail(400, 'Enter the email address of the person you are inviting');
+    const already = await db.one('SELECT m.active FROM memberships m JOIN users u ON u.id=m.user_id WHERE m.business_id=$1 AND lower(u.email)=$2 AND m.active LIMIT 1', [req.user.business_id, email]);
+    if (already) fail(409, 'This person is already in your team. Change their role in the list instead.');
     const token = rid(16);
-    await db.query('INSERT INTO invites(token, business_id, role, name, trade_role) VALUES($1,$2,$3,$4,$5)', [token, req.user.business_id, role, str(ctx.body.name, 100), str(ctx.body.trade_role, 60)]);
-    return { url: `${originOf(req)}/join/${token}` };
+    await db.query('INSERT INTO invites(token, business_id, role, name, trade_role, email) VALUES($1,$2,$3,$4,$5,$6)', [token, req.user.business_id, role, str(ctx.body.name, 100), str(ctx.body.trade_role, 60), email]);
+    return { url: `${originOf(req)}/join/${token}`, email };
   });
   router.put('/api/team/:id', async (req, res, ctx) => {
     need(req, 'team.manage');
