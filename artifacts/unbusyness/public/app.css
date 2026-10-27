@@ -240,3 +240,31 @@ details summary{cursor:pointer;font-weight:700;color:var(--green)}
   .items .u{display:none}
 }
 @media print{.side,.top,.tabbar,#toastHost{display:none!important}}
+
+/* Lists: filters, sorting, paging */
+.lvbar{display:flex;flex-direction:column;gap:10px;margin-bottom:12px}
+.lvrow{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.lvbar .input{min-height:38px;font-size:13px;width:auto;max-width:100%}
+.lvbar .lvq{flex:1 1 240px;min-width:0}
+.lvbar select.input{flex:0 1 auto;padding-right:28px}
+.lvdates{display:inline-flex;gap:6px;align-items:center;flex-wrap:wrap}
+.lvdates .input{width:150px}
+.lvbar .lvnum{width:110px}
+.lvbar>.btn{align-self:flex-start}
+.tabn{font-size:11px;font-weight:700;color:var(--muted);background:var(--white);border-radius:999px;padding:1px 6px;margin-left:2px}
+.tabs .on .tabn{background:var(--sand)}
+.sorth{all:unset;cursor:pointer;display:inline-flex;gap:5px;align-items:center;font:inherit;letter-spacing:inherit;text-transform:inherit;color:inherit}
+.sorth i{font-style:normal;opacity:.3;font-size:9px}
+.sorth.on{color:var(--ink)} .sorth.on i{opacity:1}
+.sorth:hover i{opacity:.7}
+.sorth:focus-visible{outline:2px solid var(--green);outline-offset:3px;border-radius:4px}
+.tbl th.num{text-align:right}
+.pager{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;padding:10px 14px;border-top:1px solid var(--line2);font-size:13px;color:var(--muted)}
+.pager .btns{align-items:center}
+.pager .btn[disabled]{opacity:.45;pointer-events:none}
+#lvbody.loading{opacity:.55;transition:opacity .15s}
+.statbtn{text-align:left;font:inherit;color:inherit;cursor:pointer;width:100%}
+.statbtn:hover{border-color:var(--green)}
+.who{display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
+.who i{width:8px;height:8px;border-radius:50%;flex:none}
+@media (max-width:760px){.lvbar .lvq{flex-basis:100%}.lvbar select.input{flex:1 1 45%}.lvdates .input{width:130px}}

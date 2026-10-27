@@ -9,6 +9,7 @@ const { callRecord } = require('./voice/contract');
 const calendar = require('./integrations/calendar');
 const JOB_KINDS = Object.keys(calendar.KINDS);
 const { renderDoc, publicPage, DOC_CSS, esc, money, day } = require('./docs');
+const L = require('./lists');
 
 // ---------- helpers ----------
 const biz = (req) => db.one('SELECT * FROM businesses WHERE id=$1', [req.user.business_id]);
@@ -353,6 +354,22 @@ function routes(router) {
   // Customers
   router.get('/api/customers', async (req, res, ctx) => {
     need(req, 'customers.manage');
+    if (ctx.query.get('page')) {
+      const w = L.customerWhere(req.user.business_id, ctx.query); const p = L.paging(ctx.query, L.CUSTOMER_SORTS, 'last', 'desc', 'c.id');
+      const base = `SELECT c.*, (SELECT COUNT(*)::int FROM jobs j WHERE j.customer_id=c.id) AS jobs,
+        (SELECT COALESCE(SUM(total),0)::float FROM invoices i WHERE i.customer_id=c.id AND i.status='sent') AS balance,
+        (SELECT COUNT(*)::int FROM quotes q WHERE q.customer_id=c.id AND q.status='sent') AS open_quotes,
+        (SELECT MIN(scheduled_at) FROM jobs j WHERE j.customer_id=c.id AND j.status<>'done' AND j.scheduled_at >= now()) AS next_job,
+        GREATEST(c.created_at, (SELECT MAX(created_at) FROM calls k WHERE k.customer_id=c.id), (SELECT MAX(scheduled_at) FROM jobs j WHERE j.customer_id=c.id AND j.scheduled_at <= now()),
+          (SELECT MAX(created_at) FROM quotes q WHERE q.customer_id=c.id), (SELECT MAX(created_at) FROM invoices i WHERE i.customer_id=c.id)) AS last_activity
+        FROM customers c WHERE ${w.sql()}`;
+      const [rows, t, counts] = await Promise.all([
+        db.many(`SELECT * FROM (${base}) c ORDER BY ${p.order} LIMIT ${p.per} OFFSET ${p.offset}`, w.params),
+        db.one(`SELECT COUNT(*)::int AS n FROM customers c WHERE ${w.sql()}`, w.params),
+        db.one(`SELECT COUNT(*)::int AS all, ${Object.entries(L.CUSTOMER_FILTERS).filter(([k]) => k !== 'all').map(([k, v]) => `COUNT(*) FILTER (WHERE ${v})::int AS ${k}`).join(', ')} FROM customers c WHERE c.business_id=$1`, [req.user.business_id]),
+      ]);
+      return L.pageResult(rows, t.n, p, { counts });
+    }
     const q = `%${str(ctx.query.get('q'), 100)}%`;
     return db.many(`SELECT c.*, (SELECT COUNT(*)::int FROM jobs j WHERE j.customer_id=c.id) AS jobs,
       (SELECT COALESCE(SUM(total),0)::float FROM invoices i WHERE i.customer_id=c.id AND i.status='sent') AS balance,
@@ -383,8 +400,23 @@ function routes(router) {
   });
 
   // Quotes
-  router.get('/api/quotes', async (req) => {
+  router.get('/api/quotes', async (req, res, ctx) => {
     need(req, 'money.manage');
+    if (ctx.query.get('page')) {
+      const b = await biz(req);
+      const w = L.quoteWhere(b.id, b.timezone, ctx.query); const p = L.paging(ctx.query, L.QUOTE_SORTS, 'number', 'desc', 'q.id');
+      const from = 'FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id';
+      const [rows, t, stats] = await Promise.all([
+        db.many(`SELECT q.id, q.number, q.title, q.status, q.total, q.created_at, q.valid_until, q.sent_at, q.viewed_at, q.ai_drafted, q.customer_id, c.name AS customer_name,
+          (q.status='sent' AND q.valid_until < CURRENT_DATE) AS expired ${from} WHERE ${w.sql()} ORDER BY ${p.order} LIMIT ${p.per} OFFSET ${p.offset}`, w.params),
+        db.one(`SELECT COUNT(*)::int AS n, COALESCE(SUM(q.total),0)::float AS sum ${from} WHERE ${w.sql()}`, w.params),
+        db.one(`SELECT COUNT(*) FILTER (WHERE status='draft')::int AS drafts,
+          COUNT(*) FILTER (WHERE status='sent')::int AS open, COALESCE(SUM(total) FILTER (WHERE status='sent'),0)::float AS open_sum,
+          COUNT(*) FILTER (WHERE status='accepted')::int AS accepted, COALESCE(SUM(total) FILTER (WHERE status='accepted'),0)::float AS accepted_sum,
+          COUNT(*) FILTER (WHERE status='declined')::int AS declined FROM quotes WHERE business_id=$1`, [b.id]),
+      ]);
+      return L.pageResult(rows, t.n, p, { sum: t.sum, stats });
+    }
     return db.many('SELECT q.id, q.number, q.title, q.status, q.total, q.created_at, q.valid_until, q.sent_at, q.viewed_at, q.ai_drafted, c.name AS customer_name FROM quotes q LEFT JOIN customers c ON c.id=q.customer_id WHERE q.business_id=$1 ORDER BY q.id DESC LIMIT 300', [req.user.business_id]);
   });
   router.post('/api/quotes', async (req, res, ctx) => {
@@ -446,6 +478,23 @@ function routes(router) {
     const to = ctx.query.get('to') || new Date(Date.now() + 21 * 864e5).toISOString();
     const mine = !manages(req) || ctx.query.get('mine') === '1';
     if (!manages(req)) need(req, 'jobs.assigned');
+    if (ctx.query.get('page') && manages(req)) {
+      const b = await biz(req);
+      const w = L.jobWhere(b.id, b.timezone, ctx.query, JOB_KINDS);
+      if (mine) w.add('j.assigned_user_id=?', req.user.id);
+      const sorts = isOwner(req) ? L.JOB_SORTS : { ...L.JOB_SORTS, price: L.JOB_SORTS.when };
+      const p = L.paging(ctx.query, sorts, 'when', 'asc', 'j.id');
+      const from = 'FROM jobs j LEFT JOIN customers c ON c.id=j.customer_id LEFT JOIN users u ON u.id=j.assigned_user_id';
+      const [rows, t] = await Promise.all([
+        db.many(`SELECT j.*, c.name AS customer_name, c.phone AS customer_phone, u.name AS assignee, mm.color AS assignee_color,
+            (SELECT COUNT(*)::int FROM photos p WHERE p.job_id=j.id) AS photo_count,
+            (SELECT i.status FROM invoices i WHERE i.job_id=j.id ORDER BY i.id DESC LIMIT 1) AS invoice_status
+          ${from} LEFT JOIN memberships mm ON mm.user_id=j.assigned_user_id AND mm.business_id=j.business_id
+          WHERE ${w.sql()} ORDER BY ${p.order} LIMIT ${p.per} OFFSET ${p.offset}`, w.params),
+        db.one(`SELECT COUNT(*)::int AS n, COALESCE(SUM(j.price),0)::float AS sum ${from} WHERE ${w.sql()}`, w.params),
+      ]);
+      return L.pageResult(isOwner(req) ? rows : rows.map(({ price, ...j }) => j), t.n, p, isOwner(req) ? { sum: t.sum } : {});
+    }
     return db.many(`SELECT j.*, c.name AS customer_name, c.phone AS customer_phone, u.name AS assignee, mm.color AS assignee_color,
         (SELECT COUNT(*)::int FROM photos p WHERE p.job_id=j.id) AS photo_count,
         (SELECT i.status FROM invoices i WHERE i.job_id=j.id ORDER BY i.id DESC LIMIT 1) AS invoice_status
@@ -583,8 +632,22 @@ function routes(router) {
   });
 
   // Invoices
-  router.get('/api/invoices', async (req) => {
+  const INVOICE_FROM = 'FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id LEFT JOIN jobs j ON j.id=i.job_id';
+  router.get('/api/invoices', async (req, res, ctx) => {
     need(req, 'money.manage');
+    if (ctx.query.get('page')) {
+      const w = L.invoiceWhere(req.user.business_id, ctx.query); const p = L.paging(ctx.query, L.INVOICE_SORTS, 'number', 'desc', 'i.id');
+      const [rows, t, stats] = await Promise.all([
+        db.many(`SELECT i.id, i.number, i.status, i.total, i.issue_date, i.due_date, i.sent_at, i.viewed_at, i.paid_at, i.reminders_sent, i.customer_id, c.name AS customer_name, j.title AS job_title,
+          (i.status='sent' AND i.due_date < CURRENT_DATE) AS overdue ${INVOICE_FROM} WHERE ${w.sql()} ORDER BY ${p.order} LIMIT ${p.per} OFFSET ${p.offset}`, w.params),
+        db.one(`SELECT COUNT(*)::int AS n, COALESCE(SUM(i.total),0)::float AS sum ${INVOICE_FROM} WHERE ${w.sql()}`, w.params),
+        db.one(`SELECT COUNT(*) FILTER (WHERE status='sent')::int AS unpaid, COALESCE(SUM(total) FILTER (WHERE status='sent'),0)::float AS unpaid_sum,
+          COUNT(*) FILTER (WHERE status='sent' AND due_date < CURRENT_DATE)::int AS overdue, COALESCE(SUM(total) FILTER (WHERE status='sent' AND due_date < CURRENT_DATE),0)::float AS overdue_sum,
+          COUNT(*) FILTER (WHERE status='paid' AND paid_at > now() - interval '7 days')::int AS paid_week, COALESCE(SUM(total) FILTER (WHERE status='paid' AND paid_at > now() - interval '7 days'),0)::float AS paid_week_sum,
+          COUNT(*) FILTER (WHERE status='draft')::int AS drafts FROM invoices WHERE business_id=$1`, [req.user.business_id]),
+      ]);
+      return L.pageResult(rows, t.n, p, { sum: t.sum, stats });
+    }
     return db.many(`SELECT i.id, i.number, i.status, i.total, i.issue_date, i.due_date, i.sent_at, i.viewed_at, i.paid_at, i.reminders_sent, c.name AS customer_name, j.title AS job_title,
       (i.status='sent' AND i.due_date < CURRENT_DATE) AS overdue FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id LEFT JOIN jobs j ON j.id=i.job_id
       WHERE i.business_id=$1 ORDER BY i.id DESC LIMIT 500`, [req.user.business_id]);
@@ -657,10 +720,12 @@ function routes(router) {
     need(req, 'company.settings');
     return db.many('SELECT * FROM outbox WHERE business_id=$1 ORDER BY id DESC LIMIT 100', [req.user.business_id]);
   });
-  router.get('/api/export/invoices.csv', async (req, res) => {
+  router.get('/api/export/invoices.csv', async (req, res, ctx) => {
     need(req, 'money.manage');
+    // Same filters as the invoice list, so "last month, paid" exports exactly what is on screen.
+    const w = L.invoiceWhere(req.user.business_id, ctx.query);
     const rows = await db.many(`SELECT i.number, i.status, i.issue_date, i.due_date, i.paid_at, i.paid_method, i.subtotal, i.tax, i.total, c.name AS customer, c.email, j.title AS job
-      FROM invoices i LEFT JOIN customers c ON c.id=i.customer_id LEFT JOIN jobs j ON j.id=i.job_id WHERE i.business_id=$1 AND i.status<>'void' ORDER BY i.issue_date, i.id`, [req.user.business_id]);
+      ${INVOICE_FROM} WHERE ${w.sql()} ORDER BY i.issue_date, i.id`, w.params);
     const cols = ['number', 'status', 'issue_date', 'due_date', 'paid_at', 'paid_method', 'customer', 'email', 'job', 'subtotal', 'tax', 'total'];
     const q = (v) => { const s = v === null || v === undefined ? '' : v instanceof Date ? v.toISOString().slice(0, 10) : String(v).slice(0, String(v).match(/^\d{4}-\d\d-\d\dT/) ? 10 : undefined); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
     const csv = [cols.join(','), ...rows.map((r) => cols.map((c) => q(r[c])).join(','))].join('\n');
