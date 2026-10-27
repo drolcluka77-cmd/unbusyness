@@ -10,6 +10,7 @@ const db = require('./db');
 const { fail } = require('./http');
 const { ROLES } = require('./rbac');
 const L = require('./lists');
+const deletion = require('./deletion');
 
 const adminEmails = () => String(process.env.PLATFORM_ADMINS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
 function isPlatformAdmin(user) {
@@ -214,6 +215,35 @@ function routes(router) {
   router.post('/api/admin/errors/:id/resolve', async (req, res, ctx) => {
     needAdmin(req);
     await db.query('UPDATE app_errors SET resolved_at=now() WHERE id=$1', [Number(ctx.params.id) || 0]);
+    return { ok: true };
+  });
+
+  // Delete a person or a whole company. Both need the name/email typed again, and both are logged.
+  router.get('/api/admin/users/:id/delete-plan', async (req, res, ctx) => {
+    needAdmin(req);
+    const u = await db.one('SELECT id, email, name FROM users WHERE id=$1', [Number(ctx.params.id) || 0]);
+    if (!u) fail(404, 'Not found');
+    return { user: u, ...(await deletion.plan(u.id)) };
+  });
+  router.post('/api/admin/users/:id/delete', async (req, res, ctx) => {
+    needAdmin(req);
+    const u = await db.one('SELECT id, email FROM users WHERE id=$1', [Number(ctx.params.id) || 0]);
+    if (!u) fail(404, 'Not found');
+    if (u.id === req.user.id) fail(400, 'Delete your own account from the Account page.');
+    if (String(ctx.body.confirm || '').trim().toLowerCase() !== String(u.email || '').toLowerCase()) fail(400, 'Type the email address exactly to confirm.');
+    let out;
+    try { out = await deletion.deleteUser(u.id); } catch (e) { if (e.status) fail(e.status, e.message.replace('You are the only owner', 'This person is the only owner').replace('Make someone else owner first (Settings › Team), or delete the company.', 'Make someone else owner on the company page first, or delete the company.')); throw e; }
+    await audit(req, 'user.delete', { details: { email: u.email, companies_deleted: out.companies, reason: String(ctx.body.reason || '').slice(0, 300) } });
+    return { ok: true, ...out };
+  });
+  router.post('/api/admin/companies/:id/delete', async (req, res, ctx) => {
+    needAdmin(req);
+    const b = await db.one('SELECT id, name FROM businesses WHERE id=$1', [Number(ctx.params.id) || 0]);
+    if (!b) fail(404, 'Not found');
+    if (String(ctx.body.confirm || '').trim() !== b.name.trim()) fail(400, 'Type the company name exactly to confirm.');
+    const counts = await db.one('SELECT (SELECT COUNT(*)::int FROM memberships WHERE business_id=$1 AND active) AS members, (SELECT COUNT(*)::int FROM invoices WHERE business_id=$1) AS invoices, (SELECT COUNT(*)::int FROM customers WHERE business_id=$1) AS customers', [b.id]);
+    await deletion.deleteCompany(b.id);
+    await audit(req, 'company.delete', { details: { company: b.name, company_id: b.id, ...counts, reason: String(ctx.body.reason || '').slice(0, 300) } });
     return { ok: true };
   });
 
