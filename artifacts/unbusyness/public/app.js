@@ -212,6 +212,7 @@ async function pAccount(qs) {
   const has = (p) => a.identities.some((i) => i.provider === p) || a.legacy === p;
   const body = `${head('Account', 'Your account', esc(a.email))}
     <div class="grid g2"><div class="stack"><div class="card cb stack"><b>Profile</b><form class="form" onsubmit="saveAccount(event)"><div class="field"><label for="an">Name</label><input class="input" id="an" value="${attr(a.name || '')}" required></div>
+      <div class="field"><label for="aph">Mobile phone</label><input class="input" id="aph" type="tel" autocomplete="tel" placeholder="+1 312 555 0100" value="${attr(a.phone || '')}"><span class="hint">You get a text when a job is assigned to you or changed.</span></div>
       <div class="field"><span class="lab">EMAIL</span><div>${esc(a.email)} ${a.verified ? pill('Confirmed', 'ok') : pill('Not confirmed', 'apricot')}</div></div><button class="btn primary" style="justify-self:start">Save</button></form></div>
       <div class="card cb stack"><b>${a.password ? 'Change password' : 'Set a password'}</b><form class="form" onsubmit="savePassword(event)">${a.password ? '<div class="field"><label for="apc">Current password</label><input class="input" id="apc" type="password" required autocomplete="current-password"></div>' : ''}
         <div class="field"><label for="apn">New password</label><input class="input" id="apn" type="password" required minlength="10" autocomplete="new-password"><span class="hint">At least 10 characters. Other devices are logged out.</span></div><button class="btn primary" style="justify-self:start">Save password</button></form></div></div>
@@ -221,7 +222,7 @@ async function pAccount(qs) {
         <a class="btn line" href="/api/logout">${svg('out', 16)}Log out</a></div></div>`;
   if (manages()) shell('account', 'Your <b>account</b>', body); else phoneShell('Account', body, '#/my');
 }
-async function saveAccount(e) { e.preventDefault(); if (await act(() => api('PUT', '/api/auth/account', { name: val('an') }), 'Saved')) { await refreshMe(); route(); } }
+async function saveAccount(e) { e.preventDefault(); if (await act(() => api('PUT', '/api/auth/account', { name: val('an'), phone: val('aph') }), 'Saved')) { await refreshMe(); route(); } }
 async function savePassword(e) { e.preventDefault(); if (await act(() => api('POST', '/api/auth/password', { current: val('apc'), password: val('apn') }), 'Password saved')) route(); }
 async function removeIdentity(p) { if (confirm('Remove this login method?') && await act(() => api('POST', `/api/auth/identities/${p}/remove`), 'Removed')) route(); }
 async function devLogin(e) {
@@ -1112,7 +1113,7 @@ boot();
 function adminShell(tab, content) {
   const t = (k, label, h) => `<a href="${h}" class="${tab === k ? 'on' : ''}">${label}</a>`;
   $('#root').innerHTML = `<div class="adm"><header class="admtop"><div class="row">${LOGO}<div><b>Unbusyness team console</b><div class="muted small">Every change here is logged</div></div></div>
-    <nav class="tabs" aria-label="Console">${t('home', 'Overview', '#/admin')}${t('companies', 'Companies', '#/admin/companies')}${t('users', 'People', '#/admin/users')}${t('audit', 'Change log', '#/admin/audit')}</nav>
+    <nav class="tabs" aria-label="Console">${t('home', 'Overview', '#/admin')}${t('companies', 'Companies', '#/admin/companies')}${t('users', 'People', '#/admin/users')}${t('system', 'System', '#/admin/system')}${t('audit', 'Change log', '#/admin/audit')}</nav>
     <a class="btn line sm" href="#/">${svg('back', 14)}Back to the app</a></header><main class="admmain" id="content">${content || '<div class="empty">Loading…</div>'}</main></div>`;
 }
 const admRole = (r) => ({ owner: 'Owner', manager: 'Manager', worker: 'Worker' }[r] || r);
@@ -1123,6 +1124,7 @@ async function pAdmin(sub, id, qs) {
   if (sub === 'company' && id) return admCompany(id);
   if (sub === 'users') return admUsers(qs);
   if (sub === 'audit') return admAudit();
+  if (sub === 'system') return admSystem();
   adminShell('home');
   const d = await act(() => api('GET', '/api/admin/overview')); if (!d || gone('admin')) return;
   const t = d.totals;
@@ -1180,6 +1182,8 @@ async function admCompany(id) {
         <div class="fld"><small>Voice agent</small><b>${esc(b.voice_provider || 'Not set')}</b></div><div class="fld"><small>Online payments</small><b>${b.stripe_ready ? 'Ready' : b.stripe_connected ? 'Started' : 'Not connected'}</b></div>
         <div class="fld"><small>Currency · time zone</small><b>${esc(b.currency)} · ${esc(b.timezone)}</b></div><div class="fld"><small>Plan</small><b>${esc(b.plan)}</b></div>
         ${d.integrations.map((x) => `<div class="fld"><small>${x.kind === 'email' ? 'Mailbox' : 'Calendar'}</small><b>${esc(x.provider)} · ${esc(x.status)}</b>${x.last_error ? `<div class="small" style="color:var(--red)">${esc(x.last_error)}</div>` : ''}</div>`).join('')}</div></div>
+      <div class="card"><div class="ch"><div><h2>Voice agent</h2><p>Last calls and tool requests from the voice provider</p></div></div>${d.voice.length ? `<div class="tscroll admfeed"><table class="tbl"><tbody>${d.voice.map((e) => `<tr><td class="muted" style="white-space:nowrap">${ago(e.created_at)}</td><td>${esc(e.provider)} · ${e.kind === 'tool' ? 'Tool: ' + esc(e.name) : 'Call' + (e.name ? ' → ' + esc(e.name) : '')}</td><td>${e.status === 'ok' ? pill('OK', 'ok') : e.status === 'duplicate' || e.status === 'ignored' ? pill(e.status, 'gray') : pill(e.status, 'red')}${e.error ? `<div class="muted small">${esc(e.error)}</div>` : ''}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">Nothing received from a voice agent yet.</div>'}</div>
+      <div class="card"><div class="ch"><div><h2>Messages sent</h2><p>Emails and texts to customers and the team</p></div></div>${d.outbox.length ? `<div class="tscroll admfeed"><table class="tbl"><tbody>${d.outbox.map((o) => `<tr><td class="muted" style="white-space:nowrap">${ago(o.created_at)}</td><td>${esc(o.channel)}<div class="muted small">${esc(o.subject || '')}</div></td><td>${o.status === 'sent' ? pill('Sent', 'ok') : o.status === 'failed' ? pill('Failed', 'red') : pill('Only saved', 'gray')}${o.error ? `<div class="muted small">${esc(o.error)}</div>` : ''}</td></tr>`).join('')}</tbody></table></div>` : '<div class="empty">No messages yet.</div>'}</div>
       <div class="card"><div class="ch"><h2>Activity</h2></div><div class="cb admfeed" style="padding-top:2px">${d.activity.map((a) => `<div class="act"><div class="grow"><b>${esc(a.text)}</b><div class="muted small">${ago(a.created_at)}</div></div></div>`).join('') || '<div class="empty">Nothing yet.</div>'}</div></div>
     </div></div>`);
 }
@@ -1220,3 +1224,18 @@ async function admAudit() {
   const rows = await act(() => api('GET', '/api/admin/audit')); if (!rows || gone('admin')) return;
   setContent(head('Change log', 'Change log', 'Every change our team made in this console: who, when and why.') + `<div class="card">${auditRows(rows)}</div>`);
 }
+
+async function admSystem() {
+  adminShell('system');
+  const d = await act(() => api('GET', '/api/admin/system')); if (!d || gone('admin')) return;
+  const open = d.errors.filter((e) => !e.resolved_at);
+  setContent(head('System', 'System health', `${d.env === 'production' ? 'Live app' : 'Development'} · running for ${d.uptimeMin < 120 ? d.uptimeMin + ' min' : Math.round(d.uptimeMin / 60) + ' h'} · reminders last ran ${d.remindersAt ? ago(d.remindersAt) : 'not yet since start'}`,
+    `<button class="btn line" onclick="admTestEmail()">${svg('send', 16)}Send me a test email</button>`) +
+    `<div class="grid g2"><div class="stack"><div class="card"><div class="ch"><div><h2>Setup</h2><p>Secrets are set in Replit → Secrets. Values are never shown here.</p></div></div>
+      ${d.checks.map((c) => `<div class="li"><span class="ic ${c.ok ? 'green' : 'apricot'}" style="width:28px;height:28px">${svg(c.ok ? 'check' : 'alert', 14)}</span><div class="grow"><b>${esc(c.label)}</b><span class="s">${esc(c.note)}</span></div></div>`).join('')}</div>
+      <div class="card cb stack"><b>Backups</b><p class="muted" style="margin:0">The database is backed up by Replit. To restore: Replit → your app → <b>Database</b> → <b>Restore</b> (point in time). Do a test restore into development once, so you know it works before you need it.</p></div></div>
+    <div class="card"><div class="ch"><div><h2>Errors</h2><p>${open.length ? `${open.length} open · the team gets an email (max. one per error per hour)` : 'No open errors'}</p></div></div>
+      ${d.errors.map((e) => `<details class="li" style="display:block"><summary class="row between" style="cursor:pointer;list-style:none"><div class="grow" style="min-width:0"><b style="${e.resolved_at ? 'color:var(--muted)' : ''}">${esc(e.message)}</b><span class="s">${esc(e.location || e.source)} · ${e.count}× · last ${ago(e.last_at)}${e.business_id ? ` · <a href="#/admin/company/${e.business_id}">company</a>` : ''}</span></div>${e.resolved_at ? pill('Fixed', 'ok') : `<button class="btn line sm" onclick="event.preventDefault();admResolve(${e.id})">Mark fixed</button>`}</summary><pre class="transcript" style="font-size:11px">${esc(e.stack || '')}</pre></details>`).join('') || '<div class="empty">Nothing went wrong. 🎉</div>'}</div></div>`);
+}
+async function admTestEmail() { const r = await act(() => api('POST', '/api/admin/system/test-email'), 'Test email sent'); if (r) toast(`Test email sent to ${r.to}`); }
+async function admResolve(id) { if (await act(() => api('POST', `/api/admin/errors/${id}/resolve`))) admSystem(); }

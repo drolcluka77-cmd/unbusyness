@@ -351,3 +351,19 @@ CREATE TABLE IF NOT EXISTS admin_audit (
 );
 CREATE INDEX IF NOT EXISTS admin_audit_time ON admin_audit(created_at DESC);
 ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
+
+-- Error alerts (lib/errors.js): one row per distinct error, counted. No request bodies or tokens are stored.
+CREATE TABLE IF NOT EXISTS app_errors (
+  id          SERIAL PRIMARY KEY,
+  signature   TEXT UNIQUE NOT NULL,
+  source      TEXT NOT NULL DEFAULT 'request',
+  location    TEXT NOT NULL DEFAULT '',
+  message     TEXT NOT NULL DEFAULT '',
+  stack       TEXT DEFAULT '',
+  count       INT NOT NULL DEFAULT 1,
+  user_id     INT REFERENCES users(id) ON DELETE SET NULL,
+  business_id INT REFERENCES businesses(id) ON DELETE SET NULL,
+  first_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  last_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  resolved_at TIMESTAMPTZ
+);

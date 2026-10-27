@@ -79,7 +79,7 @@ function routes(router) {
     const b = await db.one(`SELECT id, name, trade, address, phone, email, currency, timezone, plan, stripe_ready, voice_provider, created_at,
       (stripe_account IS NOT NULL) AS stripe_connected FROM businesses WHERE id=$1`, [id]);
     if (!b) fail(404, 'Not found');
-    const [members, invitesRows, activity, counts, integ] = await Promise.all([
+    const [members, invitesRows, activity, counts, integ, voice, outbox] = await Promise.all([
       db.many(`SELECT u.id, u.email, u.name, u.active AS user_active, u.email_verified_at IS NOT NULL AS verified, u.last_login_at, m.role, m.trade_role, m.active, m.created_at
         FROM memberships m JOIN users u ON u.id=m.user_id WHERE m.business_id=$1 ORDER BY m.active DESC, m.role, u.id`, [id]),
       db.many("SELECT token, email, role, name, created_at FROM invites WHERE business_id=$1 AND used_at IS NULL ORDER BY created_at DESC", [id]),
@@ -90,9 +90,11 @@ function routes(router) {
         (SELECT COALESCE(SUM(total),0)::float FROM invoices WHERE business_id=$1 AND status='paid') AS paid_total,
         (SELECT COALESCE(SUM(total),0)::float FROM invoices WHERE business_id=$1 AND status='sent') AS unpaid_total`, [id]),
       db.many('SELECT kind, provider, account, status, last_ok_at, last_error FROM integrations WHERE business_id=$1', [id]),
+      db.many('SELECT provider, kind, name, status, error, created_at FROM voice_events WHERE business_id=$1 ORDER BY id DESC LIMIT 20', [id]),
+      db.many(`SELECT channel, to_addr, subject, status, error, created_at FROM outbox WHERE business_id=$1 ORDER BY id DESC LIMIT 20`, [id]),
     ]);
     // invite tokens are secrets: show only a short hint so the console cannot be used to grab a join link
-    return { company: b, members, invites: invitesRows.map(({ token, ...i }) => ({ ...i, id: inviteId(token) })), activity, counts, integrations: integ,
+    return { company: b, members, invites: invitesRows.map(({ token, ...i }) => ({ ...i, id: inviteId(token) })), activity, counts, integrations: integ, voice, outbox,
       roles: Object.entries(ROLES).map(([key, r]) => ({ key, label: r.label })) };
   });
 
@@ -173,6 +175,48 @@ function routes(router) {
     return { ok: true };
   });
 
+  // System health: what is set up, what is failing, and the latest errors
+  router.get('/api/admin/system', async (req) => {
+    needAdmin(req);
+    const t0 = Date.now(); await db.one('SELECT 1 AS ok'); const dbMs = Date.now() - t0;
+    const [errorsRows, outboxFails, size] = await Promise.all([
+      db.many('SELECT id, source, location, message, stack, count, first_at, last_at, resolved_at, business_id FROM app_errors ORDER BY resolved_at IS NOT NULL, last_at DESC LIMIT 50'),
+      db.one("SELECT COUNT(*)::int AS n FROM outbox WHERE status='failed' AND created_at > now() - interval '7 days'"),
+      db.one('SELECT pg_size_pretty(pg_database_size(current_database())) AS size'),
+    ]);
+    const mail = require('./mailer').status();
+    const on = (k) => !!process.env[k];
+    return {
+      env: process.env.NODE_ENV === 'production' || process.env.REPLIT_DEPLOYMENT === '1' ? 'production' : 'development',
+      uptimeMin: Math.round(process.uptime() / 60), node: process.version, db: { ok: true, ms: dbMs, size: size.size }, remindersAt: state.remindersAt,
+      checks: [
+        { key: 'database', label: 'Database', ok: true, note: `${dbMs} ms · ${size.size}` },
+        { key: 'smtp', label: 'System email (SMTP)', ok: mail.configured, note: mail.configured ? `${mail.host}:${mail.port} · from ${mail.from}` : 'Missing SYSTEM_SMTP_HOST / USER / PASS. Confirm and reset emails and worker alerts are not sent.' },
+        { key: 'encryption', label: 'Encryption key', ok: on('ENCRYPTION_KEY'), note: on('ENCRYPTION_KEY') ? 'Set' : 'Missing ENCRYPTION_KEY. Mailbox and calendar cannot be connected.' },
+        { key: 'sms', label: 'SMS (Twilio)', ok: on('TWILIO_ACCOUNT_SID') && on('TWILIO_AUTH_TOKEN') && on('TWILIO_FROM'), note: on('TWILIO_ACCOUNT_SID') ? `From ${process.env.TWILIO_FROM || '(TWILIO_FROM missing)'}` : 'Not set. Workers and customers get email only.' },
+        { key: 'payments', label: 'Payments (Stripe)', ok: on('STRIPE_SECRET_KEY'), note: on('STRIPE_SECRET_KEY') ? (String(process.env.STRIPE_SECRET_KEY).startsWith('sk_live') ? 'Live mode' : 'Test mode') + (on('STRIPE_WEBHOOK_SECRET') ? '' : ' · STRIPE_WEBHOOK_SECRET missing') : 'Not set. No Pay button on invoices.' },
+        { key: 'ai', label: 'AI quote drafts', ok: on('ANTHROPIC_API_KEY'), note: on('ANTHROPIC_API_KEY') ? 'On' : 'Off. Quotes are drafted from the price list keywords only.' },
+        { key: 'google', label: 'Google login and mailbox', ok: on('GOOGLE_CLIENT_ID') && on('GOOGLE_CLIENT_SECRET'), note: on('GOOGLE_CLIENT_ID') ? 'Set' : 'Not set' },
+        { key: 'microsoft', label: 'Microsoft login and mailbox', ok: on('MICROSOFT_CLIENT_ID') && on('MICROSOFT_CLIENT_SECRET'), note: on('MICROSOFT_CLIENT_ID') ? 'Set' : 'Not set' },
+        { key: 'outbox', label: 'Messages that failed (7 days)', ok: outboxFails.n === 0, note: outboxFails.n ? `${outboxFails.n} failed. Open a company to see which.` : 'None' },
+      ],
+      errors: errorsRows,
+    };
+  });
+  router.post('/api/admin/system/test-email', async (req) => {
+    needAdmin(req);
+    const { sendSystemEmail, layout, status } = require('./mailer');
+    if (!status().configured) fail(400, 'SMTP is not set up yet. Add SYSTEM_SMTP_HOST, SYSTEM_SMTP_PORT, SYSTEM_SMTP_USER, SYSTEM_SMTP_PASS and SYSTEM_MAIL_FROM in Secrets.');
+    const r = await sendSystemEmail(req.user.email, 'Unbusyness test email', 'If you can read this, system email works.', layout({ title: 'System email works', intro: 'Confirmation emails, password resets, worker alerts and error alerts will be delivered.' }), 'test');
+    if (r !== 'sent') fail(502, 'The mail server did not accept the message. Check the SMTP secrets (host, port 587 or 465, username, password) and the server log for the error code.');
+    return { ok: true, to: req.user.email };
+  });
+  router.post('/api/admin/errors/:id/resolve', async (req, res, ctx) => {
+    needAdmin(req);
+    await db.query('UPDATE app_errors SET resolved_at=now() WHERE id=$1', [Number(ctx.params.id) || 0]);
+    return { ok: true };
+  });
+
   router.get('/api/admin/audit', async (req) => {
     needAdmin(req);
     return db.many(`SELECT a.*, b.name AS business_name, u.email AS target_email FROM admin_audit a LEFT JOIN businesses b ON b.id=a.business_id
@@ -180,4 +224,6 @@ function routes(router) {
   });
 }
 
-module.exports = { routes, isPlatformAdmin };
+const state = { remindersAt: null };
+
+module.exports = { routes, isPlatformAdmin, state };
