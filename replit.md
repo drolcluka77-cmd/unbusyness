@@ -10,6 +10,7 @@ Imported trade-business MVP: calls → quotes → jobs → invoices → payments
 - `DEV_LOGIN=1` is development-only and hard-disabled when `NODE_ENV=production`.
 - Development startup applies `lib/schema.sql`. Publish manages the production schema.
 - Always-on Reserved VM target: reminders run every 15 minutes.
+- Waitlist (`lib/waitlist.js`): `POST /api/waitlist` accepts sign-ups from unbusyness.com and www.unbusyness.com; extra site origins go in `WAITLIST_ORIGINS` (comma separated). New sign-ups are emailed to `WAITLIST_NOTIFY` (default info@unbusyness.com). Team console → Waitlist lists, exports and deletes them.
 
 ## Stack
 

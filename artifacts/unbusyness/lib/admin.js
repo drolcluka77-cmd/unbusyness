@@ -256,4 +256,4 @@ function routes(router) {
 
 const state = { remindersAt: null };
 
-module.exports = { routes, isPlatformAdmin, state };
+module.exports = { routes, isPlatformAdmin, needAdmin, state };

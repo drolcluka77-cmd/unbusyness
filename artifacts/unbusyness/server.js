@@ -11,6 +11,7 @@ const integrations = require('./lib/integrations');
 const accounts = require('./lib/accounts');
 const admin = require('./lib/admin');
 const errors = require('./lib/errors');
+const waitlist = require('./lib/waitlist');
 
 const PORT = Number(process.env.PORT || 3000);
 const router = createRouter();
@@ -20,6 +21,7 @@ voice.routes(router, api);
 integrations.routes(router);
 accounts.routes(router);
 admin.routes(router);
+waitlist.routes(router);
 const statics = serveStatic(path.join(__dirname, 'public'));
 
 const server = http.createServer(async (req, res) => {
@@ -28,7 +30,11 @@ const server = http.createServer(async (req, res) => {
   res.setHeader('Referrer-Policy', 'same-origin');
   try {
     if (url.pathname === '/healthz') return json(res, 200, { ok: true });
-    if (!accounts.originAllowed(req, url.pathname)) return json(res, 403, { error: 'Request blocked (wrong origin)' });
+    // Waitlist sign-ups come from the marketing site on its own domain (lib/waitlist.js checks the origin).
+    if (waitlist.isWaitlistPath(url.pathname)) {
+      if (waitlist.cors(req, res)) return;
+      if (!waitlist.originAllowed(req)) return json(res, 403, { error: 'Request blocked (wrong origin)' });
+    } else if (!accounts.originAllowed(req, url.pathname)) return json(res, 403, { error: 'Request blocked (wrong origin)' });
     const m = router.match(req.method, url.pathname);
     if (!m) {
       if (req.method === 'GET' && !url.pathname.startsWith('/api/') && statics(req, res)) return;
