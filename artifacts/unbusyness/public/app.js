@@ -1137,7 +1137,7 @@ boot();
 function adminShell(tab, content) {
   const t = (k, label, h) => `<a href="${h}" class="${tab === k ? 'on' : ''}">${label}</a>`;
   $('#root').innerHTML = `<div class="adm"><header class="admtop"><div class="row">${LOGO}<div><b>Unbusyness team console</b><div class="muted small">Every change here is logged</div></div></div>
-    <nav class="tabs" aria-label="Console">${t('home', 'Overview', '#/admin')}${t('companies', 'Companies', '#/admin/companies')}${t('users', 'People', '#/admin/users')}${t('system', 'System', '#/admin/system')}${t('audit', 'Change log', '#/admin/audit')}</nav>
+    <nav class="tabs" aria-label="Console">${t('home', 'Overview', '#/admin')}${t('companies', 'Companies', '#/admin/companies')}${t('users', 'People', '#/admin/users')}${t('waitlist', 'Waitlist', '#/admin/waitlist')}${t('system', 'System', '#/admin/system')}${t('audit', 'Change log', '#/admin/audit')}</nav>
     <a class="btn line sm" href="#/">${svg('back', 14)}Back to the app</a></header><main class="admmain" id="content">${content || '<div class="empty">Loading…</div>'}</main></div>`;
 }
 const admRole = (r) => ({ owner: 'Owner', manager: 'Manager', worker: 'Worker' }[r] || r);
@@ -1147,6 +1147,7 @@ async function pAdmin(sub, id, qs) {
   if (sub === 'companies') return admCompanies(qs);
   if (sub === 'company' && id) return admCompany(id);
   if (sub === 'users') return admUsers(qs);
+  if (sub === 'waitlist') return admWaitlist(qs);
   if (sub === 'audit') return admAudit();
   if (sub === 'system') return admSystem();
   adminShell('home');
@@ -1167,7 +1168,7 @@ function auditRows(rows) {
   const what = (a) => { const x = a.details || {}; const b = x.before || {}; const n = x.after || {};
     return ({ 'membership.update': `${b.role !== n.role ? `Role ${admRole(b.role)} → ${admRole(n.role)}` : ''}${b.active !== n.active ? `${b.role !== n.role ? ', ' : ''}${n.active ? 'restored' : 'removed from company'}` : ''}` || 'No change',
       'membership.add': `Added as ${admRole(n.role)}`, 'invite.revoke': `Invite for ${x.email || '—'} cancelled`, 'user.block': 'Account blocked', 'user.unblock': 'Account unblocked',
-      'user.delete': `Account deleted: ${x.email || ''}${(x.companies_deleted || []).length ? ' (with ' + x.companies_deleted.join(', ') + ')' : ''}`, 'company.delete': `Company deleted: ${x.company || ''}`,
+      'user.delete': `Account deleted: ${x.email || ''}${(x.companies_deleted || []).length ? ' (with ' + x.companies_deleted.join(', ') + ')' : ''}`, 'company.delete': `Company deleted: ${x.company || ''}`, 'waitlist.delete': `Waitlist sign-up deleted: ${x.email || ''}`,
       'self.delete': `Someone deleted their own account${(x.companies_deleted || []).length ? ' and ' + x.companies_deleted.join(', ') : ''}` })[a.action] || a.action; };
   return rows.length ? rows.map((a) => `<div class="li"><div class="grow"><b>${esc(what(a))}</b><span class="s">${a.target_email ? esc(a.target_email) + ' · ' : ''}${a.business_name ? `<a href="#/admin/company/${a.business_id}">${esc(a.business_name)}</a> · ` : ''}${a.admin_email ? 'by ' + esc(a.admin_email) : 'by the person themselves'} · ${ago(a.created_at)}${a.details && a.details.reason ? ' · “' + esc(a.details.reason) + '”' : ''}</span></div></div>`).join('') : '<div class="empty">No changes yet.</div>';
 }
@@ -1240,6 +1241,31 @@ LISTS.admin_users = {
 async function admUsers(qs) {
   adminShell('users');
   return listMount('admin_users', qs, head('People', 'People', 'Everyone with an Unbusyness account. Change roles from the company page.'));
+}
+/* Waitlist sign-ups from unbusyness.com (lib/waitlist.js) */
+const WL_SEG = { residents: 'Residents', building_managers: 'Building managers', tradespeople: 'Tradespeople', hotels: 'Hotels' };
+const wlLabel = (k) => k.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+const wlVal = (v) => (Array.isArray(v) ? v.join(', ') : typeof v === 'boolean' ? (v ? 'yes' : 'no') : String(v));
+const wlDetails = (d) => Object.entries(d || {}).map(([k, v]) => `<div class="small"><span class="muted">${esc(wlLabel(k))}:</span> ${esc(wlVal(v))}</div>`).join('');
+LISTS.admin_waitlist = {
+  url: '/api/admin/waitlist', route: 'admin', defs: { f: 'all', sort: 'created', dir: 'desc', q: '' }, sortDir: { email: 'asc', segment: 'asc' },
+  empty: 'No sign-ups yet. They appear here as soon as someone joins on unbusyness.com.',
+  bar: (st) => `${lvTabs('admin_waitlist', 'f', st.f, [['all', 'All'], ...Object.entries(WL_SEG)])}<div class="lvrow">${lvSearch('admin_waitlist', st, 'Search name, email, phone or answers…')}<a class="btn line sm" href="/api/admin/waitlist.csv?${new URLSearchParams({ f: st.f || 'all', q: st.q || '' })}">${svg('doc', 14)}Export CSV</a></div>`,
+  stats: (r) => `<p class="muted small" style="margin:0 0 10px">${Object.entries(WL_SEG).map(([k, t]) => `${t}: <b>${(r.counts || {})[k] || 0}</b>`).join(' · ')}${r.notify ? ` · New sign-ups are emailed to ${esc(r.notify)}` : ''}</p>`,
+  table: (r, st) => `<table class="tbl"><thead><tr>${sortTh('admin_waitlist', st, 'email', 'Person')}${sortTh('admin_waitlist', st, 'segment', 'List')}<th>Answers</th>${sortTh('admin_waitlist', st, 'created', 'Joined', 'hide-m')}<th></th></tr></thead><tbody>
+    ${r.rows.map((w) => `<tr><td><b>${esc(w.name || w.email)}</b><div class="muted small"><a href="mailto:${attr(w.email)}">${esc(w.email)}</a>${w.phone ? ' · ' + esc(w.phone) : ''}${w.language ? ' · ' + esc(w.language.toUpperCase()) : ''}</div></td>
+      <td>${pill(WL_SEG[w.segment] || w.segment, 'slate')}${w.times > 1 ? `<div class="muted small">signed up ${w.times}×</div>` : ''}</td><td>${wlDetails(w.details) || '<span class="muted small">—</span>'}</td>
+      <td class="hide-m muted">${fDate(w.created_at)}<div class="small">${ago(w.created_at)}</div></td>
+      <td class="num"><button class="btn line sm" onclick="admWlDelete(${w.id},'${attr(w.email)}')" aria-label="Delete ${attr(w.email)}">${svg('trash', 14)}</button></td></tr>`).join('')}</tbody></table>`,
+  card: (w) => `<div class="mrow"><span class="ic sand">${esc(initials(w.name || w.email))}</span><div class="grow"><b>${esc(w.name || w.email)}</b><span><a href="mailto:${attr(w.email)}">${esc(w.email)}</a>${w.phone ? ' · ' + esc(w.phone) : ''}</span><span>${esc(WL_SEG[w.segment] || w.segment)} · ${ago(w.created_at)}${w.times > 1 ? ` · ${w.times}×` : ''}</span>${Object.keys(w.details || {}).length ? `<span>${esc(Object.entries(w.details).map(([k, v]) => `${wlLabel(k)}: ${wlVal(v)}`).join(' · '))}</span>` : ''}</div><button class="btn line sm" onclick="admWlDelete(${w.id},'${attr(w.email)}')" aria-label="Delete ${attr(w.email)}">${svg('trash', 14)}</button></div>`,
+};
+async function admWaitlist(qs) {
+  adminShell('waitlist');
+  return listMount('admin_waitlist', qs, head('Waitlist', 'Waitlist', 'Sign-ups from unbusyness.com. Signing up again with the same email updates the same row.'));
+}
+function admWlDelete(id, email) {
+  admConfirm('Delete sign-up', `Delete <b>${esc(email)}</b> from the waitlist? Do this when someone asks for their details to be removed.`,
+    async (reason) => { if (await act(() => api('DELETE', `/api/admin/waitlist/${id}`, { reason }), 'Deleted')) { closeLayer(); listLoad('admin_waitlist'); } });
 }
 function admBlock(id, active, email) {
   admConfirm(active ? 'Unblock account' : 'Block account', active ? `Let <b>${esc(email)}</b> log in again?` : `Block <b>${esc(email)}</b>? They are logged out everywhere and cannot log in until you unblock them.`,

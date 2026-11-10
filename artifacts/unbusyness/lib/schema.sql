@@ -367,3 +367,20 @@ CREATE TABLE IF NOT EXISTS app_errors (
   last_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
   resolved_at TIMESTAMPTZ
 );
+
+-- Waitlist sign-ups from the marketing site (lib/waitlist.js). One row per email per list; signing up again updates it.
+CREATE TABLE IF NOT EXISTS waitlist (
+  id          SERIAL PRIMARY KEY,
+  segment     TEXT NOT NULL,
+  email       TEXT NOT NULL,
+  name        TEXT NOT NULL DEFAULT '',
+  phone       TEXT NOT NULL DEFAULT '',
+  language    TEXT NOT NULL DEFAULT '',
+  page        TEXT NOT NULL DEFAULT '',
+  details     JSONB NOT NULL DEFAULT '{}'::jsonb,
+  times       INT NOT NULL DEFAULT 1,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (segment, email)
+);
+CREATE INDEX IF NOT EXISTS waitlist_time ON waitlist(created_at DESC);
